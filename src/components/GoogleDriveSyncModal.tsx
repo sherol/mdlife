@@ -12,10 +12,12 @@ import {
   Loader2,
   Lock,
   ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { VaultFile } from '../types';
 import { syncAllFilesToDrive, importFilesFromDrive } from '../utils/googleDrive';
+import { testDriveConnection } from '../utils/googleAuth';
 
 interface GoogleDriveSyncModalProps {
   isOpen: boolean;
@@ -41,11 +43,38 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; file: string } | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [confirmSyncOpen, setConfirmSyncOpen] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleTestConnection = async () => {
+    try {
+      setIsTestingConnection(true);
+      setStatusMessage(null);
+      const res = await testDriveConnection();
+      if (res.ok) {
+        setStatusMessage({
+          type: 'success',
+          text: `Google Drive connection is active and verified! (User: ${res.email || user?.email})`,
+        });
+      } else {
+        setStatusMessage({
+          type: 'error',
+          text: res.error || 'Connection issue detected with Google Drive.',
+        });
+      }
+    } catch (err: any) {
+      setStatusMessage({
+        type: 'error',
+        text: err?.message || 'Failed to test Google Drive connection.',
+      });
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
 
   const handleSignIn = async () => {
     try {
@@ -251,19 +280,36 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={onSignOut}
-                  title="Disconnect Google Account"
-                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${
-                    isDarkMode
-                      ? 'bg-stone-900 border-stone-800 hover:bg-stone-800 text-stone-400'
-                      : 'bg-white border-stone-200 hover:bg-stone-100 text-stone-600'
-                  }`}
-                >
-                  <LogOut className="w-3 h-3" />
-                  Sign Out
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleTestConnection}
+                    disabled={isTestingConnection}
+                    title="Verify Google Drive API connection and token validity"
+                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                      isDarkMode
+                        ? 'bg-stone-900 border-stone-800 hover:bg-stone-800 text-stone-300'
+                        : 'bg-white border-stone-200 hover:bg-stone-50 text-stone-700'
+                    }`}
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isTestingConnection ? 'animate-spin text-blue-600' : 'text-stone-500'}`} />
+                    <span>{isTestingConnection ? 'Testing...' : 'Test Connection'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={onSignOut}
+                    title="Disconnect Google Account"
+                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${
+                      isDarkMode
+                        ? 'bg-stone-900 border-stone-800 hover:bg-stone-800 text-stone-400'
+                        : 'bg-white border-stone-200 hover:bg-stone-100 text-stone-600'
+                    }`}
+                  >
+                    <LogOut className="w-3 h-3" />
+                    Sign Out
+                  </button>
+                </div>
               </div>
 
               {/* Target Location in Drive */}

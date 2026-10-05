@@ -11,6 +11,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { VaultFile } from '../types';
 
 interface SkillPlaygroundModalProps {
@@ -291,7 +292,50 @@ export function filterActiveItems<T extends { active: boolean }>(items: readonly
               ) : executionOutput ? (
                 <div className="p-5 bg-stone-50 border border-stone-200 rounded-xl">
                   <div className="prose prose-stone max-w-none text-xs leading-relaxed">
-                    <ReactMarkdown>{executionOutput}</ReactMarkdown>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        table: ({ children }) => (
+                          <div className="overflow-x-auto my-3 rounded-lg border border-stone-200 bg-white">
+                            <table className="w-full text-left border-collapse text-xs">
+                              {children}
+                            </table>
+                          </div>
+                        ),
+                        thead: ({ children }) => (
+                          <thead className="bg-stone-100 text-stone-900 border-b border-stone-200 font-semibold">
+                            {children}
+                          </thead>
+                        ),
+                        tbody: ({ children }) => (
+                          <tbody className="divide-y divide-stone-100 bg-white">
+                            {children}
+                          </tbody>
+                        ),
+                        th: ({ children, style, align }: any) => (
+                          <th style={style} align={align} className="px-3 py-2 text-stone-800 font-semibold uppercase text-[11px]">
+                            {children}
+                          </th>
+                        ),
+                        td: ({ children, style, align }: any) => (
+                          <td style={style} align={align} className="px-3 py-2 text-stone-700">
+                            {children}
+                          </td>
+                        ),
+                        a: ({ href, children }) => (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline font-medium"
+                          >
+                            {children}
+                          </a>
+                        ),
+                      }}
+                    >
+                      {executionOutput}
+                    </ReactMarkdown>
                   </div>
                 </div>
               ) : (

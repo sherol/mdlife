@@ -170,6 +170,20 @@ Develop a modular agent workflow that accepts a research topic query, searches a
 - Fast token streaming with background task queuing
 - Markdown AST validation before saving files to disk
 - Cache previous search hits to prevent redundant queries
+
+### Component Pipeline & Latency
+
+| Stage | Module | Target Latency | Status |
+| :--- | :--- | :---: | :--- |
+| Ingestion | Academic & Web Scraper | < 800ms | Operational |
+| Synthesis | \`@research-synthesizer\` | < 1.5s | In Review |
+| Verification | Citation & Fact Auditor | < 1.2s | Planned |
+| Storage | Obsidian Vault Exporter | < 150ms | Operational |
+
+## External References & Docs
+- [Google AI Studio Documentation](https://ai.google.dev)
+- [arXiv CS.AI Preprints](https://arxiv.org/list/cs.AI/recent)
+- Parent Goal: [[ai-systems-mastery.md]]
 `
   },
   {
@@ -197,6 +211,15 @@ Parent Goal: [[endurance-vitality.md]]
 
 ## Race Target
 Finish the 21.1 km course in 1 hour 44 minutes 59 seconds or faster (requires steady pace of 4:58/km).
+
+## Training Paces & Split Schedule
+
+| Zone | Workout Type | Target Pace | Target Heart Rate |
+| :--- | :--- | :---: | :---: |
+| Zone 2 | Aerobic Base / Easy | 5:35 - 5:50 /km | 135 - 148 bpm |
+| Zone 3 | Marathon / Steady | 5:10 - 5:20 /km | 149 - 159 bpm |
+| Zone 4 | Half Marathon Race Pace | 4:55 - 4:58 /km | 160 - 169 bpm |
+| Zone 5 | VO2 Max / 1k Intervals | 4:20 - 4:30 /km | 170+ bpm |
 
 ## Training Checklist
 - [x] Complete 4-week base aerobic building (Zone 2 volume)

@@ -20,6 +20,7 @@ interface AgentSkillsLabProps {
   onSelectFile: (id: string) => void;
   onOpenSkillPlayground: (file: VaultFile) => void;
   onQuickNewFileInFolder: (folder: string) => void;
+  onLoadStarterSkills?: () => void;
 }
 
 export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
@@ -27,15 +28,18 @@ export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
   onSelectFile,
   onOpenSkillPlayground,
   onQuickNewFileInFolder,
+  onLoadStarterSkills,
 }) => {
   const skills = files.filter((f) => {
     const folderLower = (f.folder || '').toLowerCase();
     const catLower = (f.frontmatter.category || '').toLowerCase();
+    const nameLower = (f.name || '').toLowerCase();
     return (
       folderLower === 'skills' ||
       folderLower.startsWith('skills/') ||
       folderLower.includes('skill') ||
-      catLower === 'skills'
+      catLower === 'skills' ||
+      nameLower.includes('skill')
     );
   });
   const projects = files.filter((f) => {
@@ -68,11 +72,22 @@ export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {onLoadStarterSkills && (
+              <button
+                type="button"
+                id="btn-load-starter-skills-top"
+                onClick={onLoadStarterSkills}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                Load Starter Skills
+              </button>
+            )}
             <button
               type="button"
               id="btn-create-skill"
               onClick={() => onQuickNewFileInFolder('skills')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-stone-900 hover:bg-stone-800 rounded-lg shadow-xs transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-stone-900 hover:bg-stone-800 rounded-lg shadow-xs transition-colors cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               New Agent Skill
@@ -85,18 +100,32 @@ export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
           <div className="bg-white border border-stone-200 rounded-xl p-8 text-center shadow-xs">
             <Bot className="w-8 h-8 text-stone-400 mx-auto mb-2" />
             <p className="text-sm font-semibold text-stone-800">No agent skill files found in your vault</p>
-            <p className="text-xs text-stone-500 mt-1 mb-4">
-              Add a markdown skill file with YAML frontmatter in your <code className="bg-stone-100 px-1 py-0.5 rounded">/skills/</code> folder to test and run prompt templates.
+            <p className="text-xs text-stone-500 mt-1 mb-5 max-w-md mx-auto">
+              Agent skills are modular prompt templates that can be executed independently or linked to projects.
+              Load 4 battle-tested starter skill templates or author your own from scratch.
             </p>
-            <button
-              type="button"
-              id="btn-empty-create-skill"
-              onClick={() => onQuickNewFileInFolder('skills')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-900 text-white text-xs font-semibold hover:bg-stone-800 cursor-pointer transition-colors shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Create First Skill File
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2.5">
+              {onLoadStarterSkills && (
+                <button
+                  type="button"
+                  id="btn-empty-load-starter-skills"
+                  onClick={onLoadStarterSkills}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer transition-colors shadow-xs"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  Load 4 Starter Skill Templates
+                </button>
+              )}
+              <button
+                type="button"
+                id="btn-empty-create-skill"
+                onClick={() => onQuickNewFileInFolder('skills')}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-stone-900 text-white text-xs font-semibold hover:bg-stone-800 cursor-pointer transition-colors shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Create First Skill File
+              </button>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

@@ -14,9 +14,11 @@ import {
   HardDrive,
   CloudCheck,
   CloudUpload,
+  AlertCircle,
+  AlertTriangle,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
-import { VaultFile, ActiveTab } from '../types';
+import { VaultFile, ActiveTab, DriveConnectionStatus } from '../types';
 import { exportVaultAsZip } from '../utils/storage';
 import { getTaskProgress } from '../utils/markdownParser';
 
@@ -30,8 +32,12 @@ interface VaultHeaderProps {
   isExportingZip: boolean;
   setIsExportingZip: (v: boolean) => void;
   googleUser: User | null;
+  driveStatus?: DriveConnectionStatus;
+  unsavedFilesCount?: number;
   onOpenDriveModal: () => void;
   onRefreshDrive?: () => void;
+  onReconnectDrive?: () => void;
+  onTestConnection?: () => void;
   isRefreshingDrive?: boolean;
   isMockMode?: boolean;
 }
@@ -46,8 +52,12 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
   isExportingZip,
   setIsExportingZip,
   googleUser,
+  driveStatus = 'disconnected',
+  unsavedFilesCount = 0,
   onOpenDriveModal,
   onRefreshDrive,
+  onReconnectDrive,
+  onTestConnection,
   isRefreshingDrive = false,
   isMockMode = false,
 }) => {
@@ -203,51 +213,84 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
         <div className="flex items-center gap-2">
           {/* Google Drive Status & Modal Trigger (completely omitted in mock.html offline mode) */}
           {!isMockMode && (
-            <>
-              <button
-                type="button"
-                id="btn-google-drive-header"
-                onClick={onOpenDriveModal}
-                title={googleUser ? `Google Drive Connected: ${googleUser.email}` : 'Connect Google Drive'}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-all cursor-pointer ${
-                  googleUser
-                    ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-950/50 dark:border-blue-800 dark:text-blue-300'
-                    : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50 hover:border-blue-400'
-                }`}
-              >
-                {googleUser?.photoURL ? (
-                  <img
-                    src={googleUser.photoURL}
-                    alt="Google"
-                    referrerPolicy="no-referrer"
-                    className="w-4 h-4 rounded-full border border-blue-400"
-                  />
-                ) : (
-                  <HardDrive className={`w-3.5 h-3.5 ${googleUser ? 'text-blue-600' : 'text-stone-500'}`} />
-                )}
-                <span>
-                  {googleUser ? 'Google Drive' : 'Connect Drive'}
-                </span>
-                {googleUser && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 ml-0.5" title="Connected" />
-                )}
-              </button>
+            <div className="flex items-center gap-1.5">
+              {driveStatus === 'expired' ? (
+                <button
+                  type="button"
+                  id="btn-reconnect-drive-header"
+                  onClick={onReconnectDrive || onOpenDriveModal}
+                  title="Google Drive token expired! Click to reconnect and push local edits to Drive."
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 shadow-2xs transition-all cursor-pointer animate-pulse"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Drive Expired – Reconnect</span>
+                </button>
+              ) : driveStatus === 'checking' ? (
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-stone-200 bg-stone-50 text-stone-600 opacity-80"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-stone-500" />
+                  <span>Checking Drive...</span>
+                </button>
+              ) : driveStatus === 'connected' || googleUser ? (
+                <button
+                  type="button"
+                  id="btn-google-drive-header"
+                  onClick={onOpenDriveModal}
+                  title={`Google Drive Active (${googleUser?.email || 'Connected'}). Click for Sync Manager.`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 transition-all cursor-pointer shadow-2xs"
+                >
+                  {googleUser?.photoURL ? (
+                    <img
+                      src={googleUser.photoURL}
+                      alt="Google"
+                      referrerPolicy="no-referrer"
+                      className="w-4 h-4 rounded-full border border-emerald-300"
+                    />
+                  ) : (
+                    <HardDrive className="w-3.5 h-3.5 text-emerald-600" />
+                  )}
+                  <span>Drive Active</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5" title="Connected & Active" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  id="btn-google-drive-header"
+                  onClick={onOpenDriveModal}
+                  title="Connect Google Drive to sync your markdown vault"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-stone-200 bg-white hover:bg-stone-50 hover:border-blue-400 text-stone-700 transition-all cursor-pointer"
+                >
+                  <HardDrive className="w-3.5 h-3.5 text-stone-500" />
+                  <span>Connect Drive</span>
+                </button>
+              )}
 
-              {/* Refresh files from Google Drive button */}
-              {googleUser && onRefreshDrive && (
+              {/* Reload / Refresh files from Google Drive button */}
+              {(googleUser || driveStatus === 'connected' || driveStatus === 'expired') && onRefreshDrive && (
                 <button
                   type="button"
                   id="btn-refresh-drive"
                   onClick={onRefreshDrive}
                   disabled={isRefreshingDrive}
-                  title="Refresh and sync files from Google Drive"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 border border-stone-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                  title="Reload files from Google Drive (checks connection & updates vault)"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 border border-stone-200 hover:border-stone-300 rounded-lg transition-colors cursor-pointer disabled:opacity-50 shadow-2xs"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 text-stone-500 ${isRefreshingDrive ? 'animate-spin text-blue-600' : ''}`} />
-                  <span className="hidden sm:inline">Refresh Drive</span>
+                  <span className="hidden sm:inline">{isRefreshingDrive ? 'Reloading...' : 'Reload Drive'}</span>
+                  {unsavedFilesCount > 0 && (
+                    <span
+                      className="px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300"
+                      title={`${unsavedFilesCount} local file(s) with edits not yet in Drive`}
+                    >
+                      {unsavedFilesCount} unsaved
+                    </span>
+                  )}
                 </button>
               )}
-            </>
+            </div>
           )}
 
           {/* Hidden File Input for import */}

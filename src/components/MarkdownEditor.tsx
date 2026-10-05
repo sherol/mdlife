@@ -11,6 +11,8 @@ import {
   Code,
   Quote,
   Link as LinkIcon,
+  Table,
+  Globe,
   Sliders,
   Columns2,
   Eye,
@@ -23,9 +25,10 @@ import {
   Pencil,
   Check,
   X,
+  AlertTriangle,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
-import { VaultFile, FileFrontmatter } from '../types';
+import { VaultFile, FileFrontmatter, DriveConnectionStatus } from '../types';
 import { MarkdownPreview } from './MarkdownPreview';
 import { parseFrontmatter, stringifyWithFrontmatter } from '../utils/markdownParser';
 
@@ -40,6 +43,9 @@ interface MarkdownEditorProps {
   onSaveToDrive?: (file: VaultFile) => void;
   isSavingToDrive?: boolean;
   isDriveSyncing?: boolean;
+  driveStatus?: DriveConnectionStatus;
+  isUnsavedToDrive?: boolean;
+  onReconnectDrive?: () => void;
   googleUser?: User | null;
 }
 
@@ -54,6 +60,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   onSaveToDrive,
   isSavingToDrive = false,
   isDriveSyncing = false,
+  driveStatus = 'disconnected',
+  isUnsavedToDrive = false,
+  onReconnectDrive,
   googleUser,
 }) => {
   const [viewMode, setViewMode] = useState<'split' | 'edit' | 'preview'>('split');
@@ -233,20 +242,48 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             >
               <Code className="w-3.5 h-3.5" />
             </button>
-          </div>
-
-          {/* Link / Wiki-Link Dropdown */}
-          <div className="relative">
             <button
               type="button"
-              id="btn-insert-wikilink"
-              title="Insert [[Link]] to another file"
-              onClick={() => setShowWikiDropdown(!showWikiDropdown)}
-              className="flex items-center gap-1 px-2 py-1.5 bg-white border border-stone-200 rounded-md hover:bg-stone-100 text-stone-700 shadow-2xs"
+              id="btn-table"
+              title="Insert Markdown Table"
+              onClick={() =>
+                insertText(
+                  '\n| Column 1 | Column 2 | Column 3 |\n| :--- | :--- | :--- |\n| Item 1 | Details | Active |\n| Item 2 | Details | Pending |\n\n',
+                  '',
+                  ''
+                )
+              }
+              className="p-1.5 hover:bg-stone-100 rounded text-stone-700"
             >
-              <LinkIcon className="w-3.5 h-3.5 text-blue-600" />
-              <span>Link [[...]]</span>
+              <Table className="w-3.5 h-3.5" />
             </button>
+          </div>
+
+          {/* Links Group */}
+          <div className="flex items-center border border-stone-200 rounded-md bg-white p-0.5 shadow-2xs gap-0.5">
+            <button
+              type="button"
+              id="btn-web-link"
+              title="Insert Web Link"
+              onClick={() => insertText('[', '](https://example.com)', 'Link title')}
+              className="flex items-center gap-1 px-2 py-1 hover:bg-stone-100 rounded text-stone-700 text-xs"
+            >
+              <Globe className="w-3.5 h-3.5 text-stone-500" />
+              <span>URL</span>
+            </button>
+
+            {/* Link / Wiki-Link Dropdown */}
+            <div className="relative">
+              <button
+                type="button"
+                id="btn-insert-wikilink"
+                title="Insert [[Link]] to another file"
+                onClick={() => setShowWikiDropdown(!showWikiDropdown)}
+                className="flex items-center gap-1 px-2 py-1 hover:bg-stone-100 rounded text-stone-700 text-xs"
+              >
+                <LinkIcon className="w-3.5 h-3.5 text-blue-600" />
+                <span>[[...]]</span>
+              </button>
 
             {showWikiDropdown && (
               <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-stone-200 rounded-lg shadow-lg z-30 p-1 max-h-56 overflow-y-auto">
@@ -271,6 +308,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               </div>
             )}
           </div>
+        </div>
 
           {/* Metadata Quick Edit Drawer Toggle */}
           <button
@@ -293,22 +331,51 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               type="button"
               id="btn-editor-save-drive"
               disabled={isSavingToDrive || isDriveSyncing}
-              onClick={() => onSaveToDrive(file)}
-              title={googleUser ? 'Save this file to Google Drive' : 'Connect Google Drive to save'}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 border border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-blue-700 rounded-md transition-colors shadow-2xs font-medium cursor-pointer disabled:opacity-75"
+              onClick={() => {
+                if (driveStatus === 'expired' && onReconnectDrive) {
+                  onReconnectDrive();
+                } else {
+                  onSaveToDrive(file);
+                }
+              }}
+              title={
+                driveStatus === 'expired'
+                  ? 'Drive session expired. Click to reconnect and push local edits to Drive.'
+                  : isUnsavedToDrive
+                  ? 'Edits exist locally that need saving to Google Drive'
+                  : googleUser
+                  ? 'Save this file to Google Drive'
+                  : 'Connect Google Drive to save'
+              }
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 border rounded-md transition-colors shadow-2xs font-medium cursor-pointer disabled:opacity-75 ${
+                driveStatus === 'expired'
+                  ? 'border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900'
+                  : isUnsavedToDrive
+                  ? 'border-amber-300 bg-amber-50/80 hover:bg-amber-100 text-amber-900'
+                  : 'border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-blue-700'
+              }`}
             >
               {isSavingToDrive || isDriveSyncing ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+              ) : driveStatus === 'expired' ? (
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
               ) : (
-                <CloudUpload className="w-3.5 h-3.5 text-blue-600" />
+                <CloudUpload className={`w-3.5 h-3.5 ${isUnsavedToDrive ? 'text-amber-600' : 'text-blue-600'}`} />
               )}
               <span>
                 {isSavingToDrive
                   ? 'Saving...'
                   : isDriveSyncing
-                  ? 'Auto-syncing...'
+                  ? 'Syncing...'
+                  : driveStatus === 'expired'
+                  ? 'Drive Expired – Reconnect'
+                  : isUnsavedToDrive
+                  ? 'Save to Drive (Unsaved)'
                   : 'Save to Drive'}
               </span>
+              {isUnsavedToDrive && driveStatus !== 'expired' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" title="Unsaved changes pending" />
+              )}
             </button>
           )}
         </div>
@@ -449,6 +516,28 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 <span>Rename File</span>
               </button>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Connection Expired or Unsaved Banner */}
+      {driveStatus === 'expired' && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between text-xs text-amber-900 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Google Drive connection expired.</strong> Your recent edits are safely stored in your browser. Reconnect to resume sync to Drive.
+            </span>
+          </div>
+          {onReconnectDrive && (
+            <button
+              type="button"
+              id="btn-reconnect-drive-banner"
+              onClick={onReconnectDrive}
+              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded font-medium text-xs shadow-2xs transition-colors shrink-0 cursor-pointer"
+            >
+              Reconnect Drive
+            </button>
           )}
         </div>
       )}

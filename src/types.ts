@@ -38,3 +38,6 @@ export interface TaskProgress {
 }
 
 export type ActiveTab = 'editor' | 'matrix' | 'skills-hub' | 'graph';
+
+export type DriveConnectionStatus = 'connected' | 'checking' | 'expired' | 'disconnected';
+
