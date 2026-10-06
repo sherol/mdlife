@@ -301,20 +301,44 @@ export async function syncAllFilesToDrive(
   return { uploaded, updated };
 }
 
+// Helper for concurrent batch execution with concurrency limit
+async function mapConcurrent<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R | null>
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const chunk = items.slice(i, i + concurrency);
+    const chunkResults = await Promise.all(chunk.map(fn));
+    for (const r of chunkResults) {
+      if (r !== null) results.push(r);
+    }
+  }
+  return results;
+}
+
+export interface ImportDriveOptions {
+  includeGlobalSearch?: boolean;
+  onProgress?: (message: string) => void;
+}
+
 /**
- * Imports markdown files from the Google Drive 'Markdown Life Vault' folder, including nested sub-directories,
- * and searches across the user's Google Drive for any separately created or uploaded 'skills' folders.
+ * Imports markdown files from the Google Drive 'Markdown Life Vault' folder, including nested sub-directories.
+ * Uses concurrent parallel downloads and skips redundant global queries for instant loading.
  */
-export async function importFilesFromDrive(): Promise<VaultFile[]> {
-  const { folderMap, rootId } = await getVaultFolderHierarchy();
+export async function importFilesFromDrive(options: ImportDriveOptions = {}): Promise<VaultFile[]> {
+  const { includeGlobalSearch = false, onProgress } = options;
+  const rootId = await getOrCreateFolder(ROOT_FOLDER_NAME);
   const importedFiles: VaultFile[] = [];
   const processedPaths = new Set<string>();
+
+  onProgress?.('Scanning vault directories in Google Drive...');
 
   async function scanDirectory(folderId: string, relativePath: string) {
     const isSkillsFolder = relativePath.toLowerCase().includes('skill');
 
     // 1. Scan files in this directory
-    // Request all non-folder files and filter out Google Workspace internal docs in JS to prevent query syntax errors
     const qFiles = `'${folderId}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'`;
 
     try {
@@ -323,12 +347,10 @@ export async function importFilesFromDrive(): Promise<VaultFile[]> {
       );
       const dataFiles = await resFiles.json();
 
-      if (dataFiles.files && Array.isArray(dataFiles.files)) {
-        for (const item of dataFiles.files) {
-          // Skip Google Docs/Sheets/Slides internal formats which cannot be read as text media
-          if (item.mimeType?.startsWith('application/vnd.google-apps.')) continue;
-
-          // For non-skills folders, only include markdown and plain text files
+      if (dataFiles.files && Array.isArray(dataFiles.files) && dataFiles.files.length > 0) {
+        // Filter eligible files
+        const eligibleItems = dataFiles.files.filter((item: any) => {
+          if (item.mimeType?.startsWith('application/vnd.google-apps.')) return false;
           if (!isSkillsFolder) {
             const hasTextExt =
               item.name.endsWith('.md') ||
@@ -338,29 +360,32 @@ export async function importFilesFromDrive(): Promise<VaultFile[]> {
               item.mimeType === 'text/markdown' ||
               item.mimeType === 'text/plain' ||
               item.mimeType === 'application/octet-stream';
-            if (!hasTextExt && !isTextMime) continue;
+            if (!hasTextExt && !isTextMime) return false;
           }
+          return true;
+        });
 
+        // Concurrently fetch file contents in batches of 6
+        await mapConcurrent(eligibleItems, 6, async (item: any) => {
           try {
-            const contentRes = await driveFetch(`files/${item.id}?alt=media`);
-            const text = await contentRes.text();
             const cleanName = item.name.endsWith('.md') ? item.name : `${item.name}.md`;
             const currentFolder = relativePath || (isSkillsFolder ? 'skills' : 'notes');
             const filePath = `${currentFolder}/${cleanName}`;
 
-            if (processedPaths.has(filePath)) continue;
+            if (processedPaths.has(filePath)) return null;
             processedPaths.add(filePath);
 
+            const contentRes = await driveFetch(`files/${item.id}?alt=media`);
+            const text = await contentRes.text();
             const parsed = parseFrontmatter(text);
 
-            // Derive a friendly title for skill files if missing or generic "SKILL"
             let title = parsed.frontmatter.title;
             if (!title || title.toUpperCase() === 'SKILL' || title.toLowerCase() === 'untitled') {
               if (currentFolder.startsWith('skills/') && currentFolder.split('/').length > 1) {
                 const subName = currentFolder.split('/').pop() || '';
                 const formattedSub = subName
                   .split(/[-_]/)
-                  .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                  .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
                   .join(' ');
                 title = `${formattedSub} (${cleanName.replace(/\.md$/, '')})`;
               } else {
@@ -374,7 +399,7 @@ export async function importFilesFromDrive(): Promise<VaultFile[]> {
               parsed.frontmatter.category === 'skills' ||
               cleanName.toLowerCase().includes('skill');
 
-            importedFiles.push({
+            const fileObj: VaultFile = {
               id: filePath,
               name: cleanName,
               path: filePath,
@@ -389,17 +414,21 @@ export async function importFilesFromDrive(): Promise<VaultFile[]> {
               },
               createdAt: item.modifiedTime ? new Date(item.modifiedTime).getTime() : Date.now(),
               updatedAt: item.modifiedTime ? new Date(item.modifiedTime).getTime() : Date.now(),
-            });
+            };
+
+            importedFiles.push(fileObj);
+            return fileObj;
           } catch (err) {
             console.error(`Error reading ${item.name} from Google Drive:`, err);
+            return null;
           }
-        }
+        });
       }
     } catch (err) {
       console.warn(`Error querying files in folder ${folderId} (${relativePath}):`, err);
     }
 
-    // 2. Scan child sub-directories in this directory (e.g. skills/weather, projects/my-project)
+    // 2. Scan child sub-directories in this directory
     try {
       const qDirs = `'${folderId}' in parents and trashed = false and mimeType = 'application/vnd.google-apps.folder'`;
       const resDirs = await driveFetch(`files?q=${encodeURIComponent(qDirs)}&fields=files(id,name)`);
@@ -407,8 +436,31 @@ export async function importFilesFromDrive(): Promise<VaultFile[]> {
 
       if (dataDirs.files && Array.isArray(dataDirs.files)) {
         for (const subDir of dataDirs.files) {
-          const nextRelativePath = relativePath ? `${relativePath}/${subDir.name}` : subDir.name;
-          await scanDirectory(subDir.id, nextRelativePath);
+          // Normalize standard folder names if at top-level
+          let childRelative = subDir.name;
+          if (!relativePath) {
+            const nameLower = subDir.name.toLowerCase().trim();
+            if (
+              nameLower === 'skills' ||
+              nameLower === 'agent skills' ||
+              nameLower === 'agent-skills' ||
+              nameLower.includes('agent skill') ||
+              nameLower.endsWith('skills')
+            ) {
+              childRelative = 'skills';
+            } else if (nameLower.includes('goal')) {
+              childRelative = 'goals';
+            } else if (nameLower.includes('project')) {
+              childRelative = 'projects';
+            } else if (nameLower.includes('note')) {
+              childRelative = 'notes';
+            } else if (nameLower.includes('archive')) {
+              childRelative = 'archive';
+            }
+          } else {
+            childRelative = `${relativePath}/${subDir.name}`;
+          }
+          await scanDirectory(subDir.id, childRelative);
         }
       }
     } catch (err) {
@@ -416,140 +468,103 @@ export async function importFilesFromDrive(): Promise<VaultFile[]> {
     }
   }
 
-  // 1. Scan any files uploaded directly at the root of /Markdown Life Vault/
+  // Scan root directory and all its child sub-directories once
   await scanDirectory(rootId, '');
 
-  // 2. Scan all subfolders inside /Markdown Life Vault/ (goals, projects, skills, notes, archive, and any custom folders)
-  try {
-    const qAllTopDirs = `'${rootId}' in parents and trashed = false and mimeType = 'application/vnd.google-apps.folder'`;
-    const resAllTopDirs = await driveFetch(`files?q=${encodeURIComponent(qAllTopDirs)}&fields=files(id,name)`);
-    const dataAllTopDirs = await resAllTopDirs.json();
+  // 3. Fallback / Global Search ONLY if explicitly requested or if vault is completely empty
+  if (includeGlobalSearch || importedFiles.length === 0) {
+    onProgress?.('Searching external folders for Agent Skills...');
+    try {
+      const qSkillsGlobal = `mimeType = 'application/vnd.google-apps.folder' and trashed = false and (name = 'skills' or name = 'Skills' or name = 'SKILLS' or name = 'agent-skills' or name = 'Agent Skills')`;
+      const resSkillsGlobal = await driveFetch(
+        `files?q=${encodeURIComponent(qSkillsGlobal)}&fields=files(id,name,parents)`
+      );
+      const dataSkillsGlobal = await resSkillsGlobal.json();
 
-    if (dataAllTopDirs.files && Array.isArray(dataAllTopDirs.files)) {
-      for (const topDir of dataAllTopDirs.files) {
-        // Normalize standard folder names to lowercase (e.g. 'Skills' -> 'skills', '3. Agent Skills' -> 'skills')
-        const nameLower = topDir.name.toLowerCase().trim();
-        let targetRelative = topDir.name;
-        if (
-          nameLower === 'skills' ||
-          nameLower === 'agent skills' ||
-          nameLower === 'agent-skills' ||
-          nameLower.includes('agent skill') ||
-          nameLower.endsWith('skills')
-        ) {
-          targetRelative = 'skills';
-        } else if (nameLower.includes('goal')) {
-          targetRelative = 'goals';
-        } else if (nameLower.includes('project')) {
-          targetRelative = 'projects';
-        } else if (nameLower.includes('note')) {
-          targetRelative = 'notes';
-        } else if (nameLower.includes('archive')) {
-          targetRelative = 'archive';
+      if (dataSkillsGlobal.files && Array.isArray(dataSkillsGlobal.files)) {
+        for (const sf of dataSkillsGlobal.files) {
+          if (sf.id === rootId) continue;
+          if (sf.parents && sf.parents.includes(rootId)) continue;
+          await scanDirectory(sf.id, 'skills');
         }
-        await scanDirectory(topDir.id, targetRelative);
       }
-    } else {
-      for (const [topName, topId] of Object.entries(folderMap)) {
-        await scanDirectory(topId, topName);
-      }
+    } catch (err) {
+      console.warn('Error querying global skills folders in Drive:', err);
     }
-  } catch (err) {
-    console.warn('Error reading subfolders in Markdown Life Vault:', err);
-  }
 
-  // 3. Fallback / Global Search: Also check if the user uploaded 'skills' or 'agent-skills' elsewhere in Google Drive
-  // Note: Parent filtering is done in JS to avoid Drive API 400 query errors
-  try {
-    const qSkillsGlobal = `mimeType = 'application/vnd.google-apps.folder' and trashed = false and (name = 'skills' or name = 'Skills' or name = 'SKILLS' or name = 'agent-skills' or name = 'Agent Skills')`;
-    const resSkillsGlobal = await driveFetch(
-      `files?q=${encodeURIComponent(qSkillsGlobal)}&fields=files(id,name,parents)`
-    );
-    const dataSkillsGlobal = await resSkillsGlobal.json();
+    // Global Search for standalone skill specification files (e.g. SKILL.md, skill.md)
+    try {
+      const qSkillFiles = `trashed = false and mimeType != 'application/vnd.google-apps.folder' and (name = 'SKILL.md' or name = 'skill.md' or name contains '.skill')`;
+      const resSkillFiles = await driveFetch(
+        `files?q=${encodeURIComponent(qSkillFiles)}&fields=files(id,name,modifiedTime,parents,mimeType)`
+      );
+      const dataSkillFiles = await resSkillFiles.json();
 
-    if (dataSkillsGlobal.files && Array.isArray(dataSkillsGlobal.files)) {
-      for (const sf of dataSkillsGlobal.files) {
-        if (sf.id === rootId) continue;
-        if (sf.parents && sf.parents.includes(rootId)) continue;
-        await scanDirectory(sf.id, 'skills');
-      }
-    }
-  } catch (err) {
-    console.warn('Error querying global skills folders in Drive:', err);
-  }
+      if (dataSkillFiles.files && Array.isArray(dataSkillFiles.files)) {
+        for (const sf of dataSkillFiles.files) {
+          if (sf.mimeType?.startsWith('application/vnd.google-apps.')) continue;
 
-  // 4. Global Search for standalone skill specification files (e.g. SKILL.md, skill.md)
-  try {
-    const qSkillFiles = `trashed = false and mimeType != 'application/vnd.google-apps.folder' and (name = 'SKILL.md' or name = 'skill.md' or name contains '.skill')`;
-    const resSkillFiles = await driveFetch(
-      `files?q=${encodeURIComponent(qSkillFiles)}&fields=files(id,name,modifiedTime,parents,mimeType)`
-    );
-    const dataSkillFiles = await resSkillFiles.json();
-
-    if (dataSkillFiles.files && Array.isArray(dataSkillFiles.files)) {
-      for (const sf of dataSkillFiles.files) {
-        if (sf.mimeType?.startsWith('application/vnd.google-apps.')) continue;
-
-        let parentSlug = '';
-        if (sf.parents && sf.parents[0]) {
-          try {
-            const parentRes = await driveFetch(`files/${sf.parents[0]}?fields=id,name`);
-            const parentData = await parentRes.json();
-            if (
-              parentData.name &&
-              parentData.name !== 'root' &&
-              parentData.name !== ROOT_FOLDER_NAME
-            ) {
-              parentSlug = parentData.name.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+          let parentSlug = '';
+          if (sf.parents && sf.parents[0]) {
+            try {
+              const parentRes = await driveFetch(`files/${sf.parents[0]}?fields=id,name`);
+              const parentData = await parentRes.json();
+              if (
+                parentData.name &&
+                parentData.name !== 'root' &&
+                parentData.name !== ROOT_FOLDER_NAME
+              ) {
+                parentSlug = parentData.name.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+              }
+            } catch {
+              // ignore
             }
-          } catch {
-            // ignore
-          }
-        }
-
-        const skillFolder =
-          parentSlug && parentSlug !== 'skills' ? `skills/${parentSlug}` : 'skills';
-        const cleanName = sf.name.endsWith('.md') ? sf.name : `${sf.name}.md`;
-        const filePath = `${skillFolder}/${cleanName}`;
-
-        if (processedPaths.has(filePath)) continue;
-        processedPaths.add(filePath);
-
-        try {
-          const contentRes = await driveFetch(`files/${sf.id}?alt=media`);
-          const text = await contentRes.text();
-          const parsed = parseFrontmatter(text);
-          let title = parsed.frontmatter.title;
-          if (!title || title.toUpperCase() === 'SKILL' || title.toLowerCase() === 'untitled') {
-            title = parentSlug
-              ? parentSlug
-                  .split(/[-_]/)
-                  .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                  .join(' ')
-              : cleanName.replace(/\.md$/, '');
           }
 
-          importedFiles.push({
-            id: filePath,
-            name: cleanName,
-            path: filePath,
-            folder: skillFolder,
-            content: text,
-            frontmatter: {
-              ...parsed.frontmatter,
-              title,
-              category: 'skills',
-            },
-            createdAt: sf.modifiedTime ? new Date(sf.modifiedTime).getTime() : Date.now(),
-            updatedAt: sf.modifiedTime ? new Date(sf.modifiedTime).getTime() : Date.now(),
-          });
-        } catch (err) {
-          console.warn(`Error reading standalone skill file ${sf.name}:`, err);
+          const skillFolder =
+            parentSlug && parentSlug !== 'skills' ? `skills/${parentSlug}` : 'skills';
+          const cleanName = sf.name.endsWith('.md') ? sf.name : `${sf.name}.md`;
+          const filePath = `${skillFolder}/${cleanName}`;
+
+          if (processedPaths.has(filePath)) continue;
+          processedPaths.add(filePath);
+
+          try {
+            const contentRes = await driveFetch(`files/${sf.id}?alt=media`);
+            const text = await contentRes.text();
+            const parsed = parseFrontmatter(text);
+            let title = parsed.frontmatter.title;
+            if (!title || title.toUpperCase() === 'SKILL' || title.toLowerCase() === 'untitled') {
+              title = parentSlug
+                ? parentSlug
+                    .split(/[-_]/)
+                    .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+                    .join(' ')
+                : cleanName.replace(/\.md$/, '');
+            }
+
+            importedFiles.push({
+              id: filePath,
+              name: cleanName,
+              path: filePath,
+              folder: skillFolder,
+              content: text,
+              frontmatter: {
+                ...parsed.frontmatter,
+                title,
+                category: 'skills',
+              },
+              createdAt: sf.modifiedTime ? new Date(sf.modifiedTime).getTime() : Date.now(),
+              updatedAt: sf.modifiedTime ? new Date(sf.modifiedTime).getTime() : Date.now(),
+            });
+          } catch (err) {
+            console.warn(`Error reading standalone skill file ${sf.name}:`, err);
+          }
         }
       }
+    } catch (err) {
+      console.warn('Error querying standalone skill files in Drive:', err);
     }
-  } catch (err) {
-    console.warn('Error querying standalone skill files in Drive:', err);
   }
 
   return importedFiles;

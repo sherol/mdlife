@@ -235,26 +235,42 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
                   <span>Checking Drive...</span>
                 </button>
               ) : driveStatus === 'connected' || googleUser ? (
-                <button
-                  type="button"
-                  id="btn-google-drive-header"
-                  onClick={onOpenDriveModal}
-                  title={`Google Drive Active (${googleUser?.email || 'Connected'}). Click for Sync Manager.`}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 transition-all cursor-pointer shadow-2xs"
-                >
-                  {googleUser?.photoURL ? (
-                    <img
-                      src={googleUser.photoURL}
-                      alt="Google"
-                      referrerPolicy="no-referrer"
-                      className="w-4 h-4 rounded-full border border-emerald-300"
-                    />
-                  ) : (
-                    <HardDrive className="w-3.5 h-3.5 text-emerald-600" />
+                <>
+                  <button
+                    type="button"
+                    id="btn-google-drive-header"
+                    onClick={onOpenDriveModal}
+                    title={`Google Drive Active (${googleUser?.email || 'Connected'}). Click for Sync Manager.`}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 transition-all cursor-pointer shadow-2xs"
+                  >
+                    {googleUser?.photoURL ? (
+                      <img
+                        src={googleUser.photoURL}
+                        alt="Google"
+                        referrerPolicy="no-referrer"
+                        className="w-4 h-4 rounded-full border border-emerald-300"
+                      />
+                    ) : (
+                      <HardDrive className="w-3.5 h-3.5 text-emerald-600" />
+                    )}
+                    <span>Drive Active</span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5" title="Connected & Active" />
+                  </button>
+
+                  {/* Verify Connection Button */}
+                  {onTestConnection && (
+                    <button
+                      type="button"
+                      id="btn-verify-drive-connection"
+                      onClick={onTestConnection}
+                      title="Test Google Drive connection and ensure read/write access is active"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-stone-600 hover:text-stone-900 bg-white hover:bg-stone-50 border border-stone-200 hover:border-stone-300 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="hidden xl:inline">Verify Connection</span>
+                    </button>
                   )}
-                  <span>Drive Active</span>
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5" title="Connected & Active" />
-                </button>
+                </>
               ) : (
                 <button
                   type="button"

@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User } from 'firebase/auth';
 import { HardDrive, Plus, Sparkles, RefreshCw, Loader2 } from 'lucide-react';
 import { VaultFile, ActiveTab, FileCategory, DriveConnectionStatus } from './types';
-import { loadVaultFiles, saveVaultFiles, getTemplateForCategory } from './utils/storage';
+import { loadVaultFiles, saveVaultFiles, loadUnsavedFileIds, saveUnsavedFileIds, getTemplateForCategory } from './utils/storage';
 import { parseFrontmatter, toggleCheckboxInMarkdown, updateWikiLinks } from './utils/markdownParser';
 import { initAuth, googleSignIn, logout, subscribeDriveStatus, testDriveConnection } from './utils/googleAuth';
 import {
@@ -65,7 +65,7 @@ export default function App({ forceOffline = false }: AppProps) {
   // Google Drive & Auth State
   const [googleUser, setGoogleUser] = useState<User | null>(null);
   const [driveStatus, setDriveStatus] = useState<DriveConnectionStatus>('disconnected');
-  const [unsavedFileIds, setUnsavedFileIds] = useState<Set<string>>(new Set());
+  const [unsavedFileIds, setUnsavedFileIds] = useState<Set<string>>(loadUnsavedFileIds);
   const [isReloadModalOpen, setIsReloadModalOpen] = useState(false);
   const [hasBypassedAuth, setHasBypassedAuth] = useState<boolean>(() => {
     if (isMockMode) return true;
@@ -84,6 +84,13 @@ export default function App({ forceOffline = false }: AppProps) {
     type: 'success' | 'info' | 'error';
   } | null>(null);
 
+  const isFetchingDriveRef = useRef(false);
+
+  // CRITICAL PERSISTENCE: Save unsavedFileIds to localStorage so dirty edits survive refresh
+  useEffect(() => {
+    saveUnsavedFileIds(unsavedFileIds);
+  }, [unsavedFileIds]);
+
   // Subscribe to drive status updates
   useEffect(() => {
     const unsubscribe = subscribeDriveStatus((status, details) => {
@@ -99,23 +106,67 @@ export default function App({ forceOffline = false }: AppProps) {
   }, []);
 
   /**
-   * Fetches ONLY files that exist in Google Drive and replaces the files state
+   * Fetches files from Google Drive and safely merges them with local edits so work is never lost.
    */
   const fetchFilesFromDrive = useCallback(async (isSilent = false) => {
+    if (isFetchingDriveRef.current) return;
+    isFetchingDriveRef.current = true;
+
     try {
       setIsRefreshingDrive(true);
       if (!isSilent) setIsLoadingDriveFiles(true);
       const driveFiles = await importFilesFromDrive();
 
-      // Only display files that exist in Drive
-      setFiles(driveFiles);
-      setUnsavedFileIds(new Set());
-      saveVaultFiles(driveFiles);
+      // SMART RESILIENT MERGE:
+      // Never overwrite files that have unsaved local edits or newer local timestamps
+      setFiles((prevLocalFiles) => {
+        const mergedMap = new Map<string, VaultFile>();
+        // Add Drive files
+        for (const df of driveFiles) {
+          mergedMap.set(df.id, df);
+        }
+
+        const currentUnsaved = loadUnsavedFileIds();
+        let preservedLocalCount = 0;
+
+        for (const lf of prevLocalFiles) {
+          const hasUnsaved = currentUnsaved.has(lf.id);
+          const driveVersion = mergedMap.get(lf.id);
+
+          if (hasUnsaved) {
+            // Keep local version with unsaved changes
+            mergedMap.set(lf.id, lf);
+            preservedLocalCount++;
+          } else if (driveVersion) {
+            // If local version has a significantly newer updatedAt timestamp, preserve it
+            if (lf.updatedAt && driveVersion.updatedAt && lf.updatedAt > driveVersion.updatedAt + 2000) {
+              mergedMap.set(lf.id, lf);
+              setUnsavedFileIds((prev) => new Set(prev).add(lf.id));
+              preservedLocalCount++;
+            }
+          } else if (currentUnsaved.has(lf.id)) {
+            // File created locally while offline
+            mergedMap.set(lf.id, lf);
+            preservedLocalCount++;
+          }
+        }
+
+        const finalMerged = Array.from(mergedMap.values());
+        saveVaultFiles(finalMerged);
+
+        if (preservedLocalCount > 0 && !isSilent) {
+          setToastNotification({
+            type: 'info',
+            text: `Synced with Google Drive (${driveFiles.length} file(s)). Safely preserved ${preservedLocalCount} local file(s) with newer edits.`,
+          });
+        }
+
+        return finalMerged;
+      });
 
       if (driveFiles.length > 0) {
         setSelectedFileId((prev) => {
-          const exists = driveFiles.some((f) => f.id === prev);
-          return exists ? prev : driveFiles[0].id;
+          return prev || driveFiles[0].id;
         });
         if (!isSilent) {
           setToastNotification({
@@ -124,7 +175,7 @@ export default function App({ forceOffline = false }: AppProps) {
           });
         }
       } else {
-        setSelectedFileId(null);
+        setSelectedFileId((prev) => prev);
         if (!isSilent) {
           setToastNotification({
             type: 'info',
@@ -146,6 +197,7 @@ export default function App({ forceOffline = false }: AppProps) {
         text: err?.message || 'Failed to load files from Google Drive',
       });
     } finally {
+      isFetchingDriveRef.current = false;
       setIsRefreshingDrive(false);
       setIsLoadingDriveFiles(false);
     }
@@ -653,7 +705,9 @@ export default function App({ forceOffline = false }: AppProps) {
         setGoogleUser(result.user);
         setHasBypassedAuth(false);
         localStorage.removeItem('md_vault_bypassed_auth');
-        await fetchFilesFromDrive(false);
+        // Unblock start screen immediately so workspace opens in ~1 second
+        setIsStartingSignIn(false);
+        fetchFilesFromDrive(false);
       }
     } catch (err: any) {
       console.error('Sign-in error:', err);
@@ -661,6 +715,32 @@ export default function App({ forceOffline = false }: AppProps) {
       throw err;
     } finally {
       setIsStartingSignIn(false);
+    }
+  };
+
+  const handleTestDriveConnection = async () => {
+    setToastNotification({
+      type: 'info',
+      text: 'Verifying Google Drive connection and write authorization...',
+    });
+    try {
+      const result = await testDriveConnection();
+      if (result.ok) {
+        setToastNotification({
+          type: 'success',
+          text: `Google Drive connection verified! Active and ready to sync (${result.email || googleUser?.email || 'Authenticated'}).`,
+        });
+      } else {
+        setToastNotification({
+          type: 'error',
+          text: `Drive connection issue: ${result.error || 'Token expired'}. Please click Reconnect.`,
+        });
+      }
+    } catch (err: any) {
+      setToastNotification({
+        type: 'error',
+        text: `Error verifying connection: ${err?.message || 'Network error'}`,
+      });
     }
   };
 
@@ -888,7 +968,7 @@ export default function App({ forceOffline = false }: AppProps) {
         onOpenDriveModal={() => setIsDriveModalOpen(true)}
         onRefreshDrive={handleRequestReloadFromDrive}
         onReconnectDrive={handleReconnectDrive}
-        onTestConnection={testDriveConnection}
+        onTestConnection={handleTestDriveConnection}
         isRefreshingDrive={isRefreshingDrive}
         isMockMode={isMockMode}
       />

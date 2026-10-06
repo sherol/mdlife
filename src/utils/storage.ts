@@ -4,6 +4,30 @@ import { getInitialVaultFiles } from '../data/initialVault';
 import { parseFrontmatter, stringifyWithFrontmatter } from './markdownParser';
 
 const VAULT_STORAGE_KEY = 'md_life_vault_v1';
+const UNSAVED_IDS_KEY = 'md_life_vault_unsaved_ids';
+
+export function loadUnsavedFileIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(UNSAVED_IDS_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        return new Set(arr);
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load unsaved file ids:', err);
+  }
+  return new Set();
+}
+
+export function saveUnsavedFileIds(ids: Set<string>): void {
+  try {
+    localStorage.setItem(UNSAVED_IDS_KEY, JSON.stringify(Array.from(ids)));
+  } catch (err) {
+    console.error('Failed to save unsaved file ids:', err);
+  }
+}
 
 export function loadVaultFiles(): VaultFile[] {
   try {
