@@ -520,13 +520,13 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         </div>
       )}
 
-      {/* Connection Expired or Unsaved Banner */}
-      {(driveStatus === 'expired' || (driveStatus === 'disconnected' && isUnsavedToDrive && !!googleUser)) && (
+      {/* Connection Expired or Disconnected Banner */}
+      {(driveStatus === 'expired' || (driveStatus === 'disconnected' && !!googleUser)) && (
         <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between text-xs text-amber-900 animate-in fade-in duration-200">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
             <span>
-              <strong>Google Drive connection inactive.</strong> Your recent edits are safely stored in your browser. Reconnect to resume sync to Drive.
+              <strong>Google Drive disconnected.</strong> {isUnsavedToDrive ? 'Your latest edits are safe in browser storage. Click to reconnect and sync.' : 'Your files are safe in local storage. Click Reconnect to resume sync.'}
             </span>
           </div>
           {onReconnectDrive && (
@@ -536,7 +536,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               onClick={onReconnectDrive}
               className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded font-medium text-xs shadow-2xs transition-colors shrink-0 cursor-pointer"
             >
-              Reconnect & Sync
+              Reconnect Drive
             </button>
           )}
         </div>

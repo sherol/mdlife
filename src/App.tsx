@@ -247,6 +247,72 @@ export default function App({ forceOffline = false }: AppProps) {
     };
   }, [googleUser, isMockMode]);
 
+  // Network online/offline event listeners with automatic Google Drive reconnection
+  useEffect(() => {
+    if (isMockMode) return;
+
+    const handleOffline = () => {
+      setDriveStatus('disconnected');
+      setToastNotification({
+        type: 'info',
+        text: 'Internet connection lost. You can continue editing — all changes are saved locally in your browser.',
+      });
+    };
+
+    const handleOnline = async () => {
+      if (!googleUser) return;
+      setToastNotification({
+        type: 'info',
+        text: 'Internet restored! Checking Google Drive connection...',
+      });
+      try {
+        const res = await testDriveConnection();
+        if (res.ok) {
+          setDriveStatus('connected');
+          // Auto-sync any pending unsaved local files
+          const filesToSync = files.filter((f) => unsavedFileIds.has(f.id));
+          if (filesToSync.length > 0) {
+            let syncedCount = 0;
+            for (const unsavedF of filesToSync) {
+              try {
+                await saveFileToDrive(unsavedF);
+                syncedCount++;
+                setUnsavedFileIds((prev) => {
+                  const next = new Set(prev);
+                  next.delete(unsavedF.id);
+                  return next;
+                });
+              } catch (err) {
+                console.error(`Auto-sync failed for ${unsavedF.name}:`, err);
+              }
+            }
+            setToastNotification({
+              type: 'success',
+              text: `Reconnected to Google Drive! Synced ${syncedCount} pending local file(s).`,
+            });
+          } else {
+            setToastNotification({
+              type: 'success',
+              text: 'Reconnected to Google Drive successfully.',
+            });
+          }
+        } else {
+          setDriveStatus(res.error?.includes('401') || res.error?.includes('expired') ? 'expired' : 'disconnected');
+        }
+      } catch (err) {
+        setDriveStatus('disconnected');
+      }
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [googleUser, files, unsavedFileIds, isMockMode]);
+
   // One-time banner when opening in mock mode
   useEffect(() => {
     if (isMockMode) {

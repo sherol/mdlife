@@ -211,66 +211,69 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
-          {/* Google Drive Status & Modal Trigger (completely omitted in mock.html offline mode) */}
+          {/* Google Drive Status & Modal Trigger (Consolidated single contextual button) */}
           {!isMockMode && (
-            <div className="flex items-center gap-1.5">
-              {driveStatus === 'expired' ? (
-                <button
-                  type="button"
-                  id="btn-reconnect-drive-header"
-                  onClick={onReconnectDrive || onOpenDriveModal}
-                  title="Google Drive token expired! Click to reconnect and push local edits to Drive."
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 shadow-2xs transition-all cursor-pointer animate-pulse"
-                >
-                  <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Drive Expired – Reconnect</span>
-                </button>
-              ) : driveStatus === 'checking' ? (
+            <div className="flex items-center">
+              {driveStatus === 'checking' ? (
                 <button
                   type="button"
                   disabled
+                  id="btn-google-drive-header"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-stone-200 bg-stone-50 text-stone-600 opacity-80"
                 >
                   <RefreshCw className="w-3.5 h-3.5 animate-spin text-stone-500" />
                   <span>Checking Drive...</span>
                 </button>
-              ) : driveStatus === 'connected' || googleUser ? (
-                <>
-                  <button
-                    type="button"
-                    id="btn-google-drive-header"
-                    onClick={onOpenDriveModal}
-                    title={`Google Drive Active (${googleUser?.email || 'Connected'}). Click for Sync Manager.`}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 transition-all cursor-pointer shadow-2xs"
-                  >
-                    {googleUser?.photoURL ? (
-                      <img
-                        src={googleUser.photoURL}
-                        alt="Google"
-                        referrerPolicy="no-referrer"
-                        className="w-4 h-4 rounded-full border border-emerald-300"
-                      />
-                    ) : (
-                      <HardDrive className="w-3.5 h-3.5 text-emerald-600" />
-                    )}
-                    <span>Drive Active</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5" title="Connected & Active" />
-                  </button>
-
-                  {/* Verify Connection Button */}
-                  {onTestConnection && (
-                    <button
-                      type="button"
-                      id="btn-verify-drive-connection"
-                      onClick={onTestConnection}
-                      title="Test Google Drive connection and ensure read/write access is active"
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-stone-600 hover:text-stone-900 bg-white hover:bg-stone-50 border border-stone-200 hover:border-stone-300 rounded-lg transition-colors cursor-pointer shadow-2xs"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      <span className="hidden xl:inline">Verify Connection</span>
-                    </button>
+              ) : driveStatus === 'connected' ? (
+                <button
+                  type="button"
+                  id="btn-google-drive-header"
+                  onClick={onOpenDriveModal}
+                  title={`Google Drive Active (${googleUser?.email || 'Connected'}). Click to sync, reload, test connection, or manage Drive.`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 transition-all cursor-pointer shadow-2xs group"
+                >
+                  {isRefreshingDrive ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                  ) : googleUser?.photoURL ? (
+                    <img
+                      src={googleUser.photoURL}
+                      alt="Google"
+                      referrerPolicy="no-referrer"
+                      className="w-4 h-4 rounded-full border border-emerald-300"
+                    />
+                  ) : (
+                    <HardDrive className="w-3.5 h-3.5 text-emerald-600" />
                   )}
-                </>
+                  <span>{isRefreshingDrive ? 'Syncing...' : 'Drive Active'}</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5" title="Connected & Active" />
+                  {unsavedFilesCount > 0 && (
+                    <span
+                      className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300"
+                      title={`${unsavedFilesCount} local file(s) with edits not yet in Drive`}
+                    >
+                      {unsavedFilesCount} unsaved
+                    </span>
+                  )}
+                </button>
+              ) : driveStatus === 'expired' || (driveStatus === 'disconnected' && (googleUser || unsavedFilesCount > 0)) ? (
+                <button
+                  type="button"
+                  id="btn-reconnect-drive-header"
+                  onClick={onReconnectDrive || onOpenDriveModal}
+                  title="Google Drive disconnected! Click to reconnect with 1-click and sync local files."
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 shadow-2xs transition-all cursor-pointer animate-pulse"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Reconnect Drive</span>
+                  {unsavedFilesCount > 0 && (
+                    <span
+                      className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-amber-200 text-amber-900"
+                      title={`${unsavedFilesCount} local file(s) saved safely`}
+                    >
+                      {unsavedFilesCount} local
+                    </span>
+                  )}
+                </button>
               ) : (
                 <button
                   type="button"
@@ -281,29 +284,6 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
                 >
                   <HardDrive className="w-3.5 h-3.5 text-stone-500" />
                   <span>Connect Drive</span>
-                </button>
-              )}
-
-              {/* Reload / Refresh files from Google Drive button */}
-              {(googleUser || driveStatus === 'connected' || driveStatus === 'expired') && onRefreshDrive && (
-                <button
-                  type="button"
-                  id="btn-refresh-drive"
-                  onClick={onRefreshDrive}
-                  disabled={isRefreshingDrive}
-                  title="Reload files from Google Drive (checks connection & updates vault)"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 border border-stone-200 hover:border-stone-300 rounded-lg transition-colors cursor-pointer disabled:opacity-50 shadow-2xs"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 text-stone-500 ${isRefreshingDrive ? 'animate-spin text-blue-600' : ''}`} />
-                  <span className="hidden sm:inline">{isRefreshingDrive ? 'Reloading...' : 'Reload Drive'}</span>
-                  {unsavedFilesCount > 0 && (
-                    <span
-                      className="px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300"
-                      title={`${unsavedFilesCount} local file(s) with edits not yet in Drive`}
-                    >
-                      {unsavedFilesCount} unsaved
-                    </span>
-                  )}
                 </button>
               )}
             </div>
