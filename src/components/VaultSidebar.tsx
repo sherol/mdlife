@@ -49,8 +49,9 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<'all' | FileCategory>('all');
-  const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
-  const [collapsedSubfolders, setCollapsedSubfolders] = useState<Record<string, boolean>>({});
+  // Folders and subfolders are closed by default
+  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
+  const [openSubfolders, setOpenSubfolders] = useState<Record<string, boolean>>({});
   const [isDragOver, setIsDragOver] = useState(false);
   const [editingFileId, setEditingFileId] = useState<string | null>(null);
   const [editingFileName, setEditingFileName] = useState('');
@@ -81,15 +82,25 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
     setEditingFileName('');
   };
 
+  const isFolderOpen = (folder: string): boolean => {
+    if (searchQuery.trim().length > 0) return true;
+    return !!openFolders[folder];
+  };
+
+  const isSubfolderOpen = (subfolderKey: string): boolean => {
+    if (searchQuery.trim().length > 0) return true;
+    return !!openSubfolders[subfolderKey];
+  };
+
   const toggleFolder = (folder: string) => {
-    setCollapsedFolders((prev) => ({
+    setOpenFolders((prev) => ({
       ...prev,
       [folder]: !prev[folder],
     }));
   };
 
   const toggleSubfolder = (subfolderKey: string) => {
-    setCollapsedSubfolders((prev) => ({
+    setOpenSubfolders((prev) => ({
       ...prev,
       [subfolderKey]: !prev[subfolderKey],
     }));
@@ -241,8 +252,8 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
     setNewProjectValue('');
   };
 
-  // Helper to render a file item
-  const renderFileItem = (file: VaultFile, indent = false) => {
+  // Helper to render a file item with consistent alignment
+  const renderFileItem = (file: VaultFile) => {
     const isSelected = file.id === selectedFileId;
     const progress = getTaskProgress(file.content);
     let title = file.frontmatter.title || file.name.replace(/\.md$/, '');
@@ -258,9 +269,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
       return (
         <div
           key={file.id}
-          className={`p-1.5 bg-white border border-stone-300 rounded-md shadow-xs my-0.5 ${
-            indent ? 'ml-3' : ''
-          }`}
+          className="p-1.5 bg-white border border-stone-300 rounded-md shadow-xs my-0.5"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center gap-1">
@@ -309,9 +318,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
     return (
       <div
         key={file.id}
-        className={`group/item flex items-center justify-between px-2.5 py-1.5 rounded-md cursor-pointer transition-all ${
-          indent ? 'ml-3' : ''
-        } ${
+        className={`group/item flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-all ${
           isSelected
             ? 'bg-stone-900 text-white font-medium shadow-xs'
             : 'text-stone-700 hover:bg-stone-200/70'
@@ -518,7 +525,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
             return null;
           }
 
-          const isCollapsed = !!collapsedFolders[folder] && !searchQuery.trim();
+          const isOpen = isFolderOpen(folder);
 
           // Specialized handling for Projects (Sub-directory per project)
           if (folder === 'projects') {
@@ -538,22 +545,22 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
             return (
               <div key={folder} className="space-y-0.5">
                 {/* Folder Header */}
-                <div className="flex items-center justify-between px-2 py-1 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group">
+                <div className="flex items-center justify-between px-2 py-1.5 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group">
                   <button
                     type="button"
                     id={`folder-btn-${folder}`}
                     onClick={() => toggleFolder(folder)}
-                    className="flex items-center gap-1.5 font-semibold text-[11px] tracking-wide uppercase text-stone-500 hover:text-stone-800 cursor-pointer"
+                    className="flex items-center gap-1.5 font-semibold text-xs tracking-wider uppercase text-stone-500 hover:text-stone-800 cursor-pointer"
                   >
-                    {isCollapsed ? (
-                      <ChevronRight className="w-3.5 h-3.5 text-stone-400" />
+                    {isOpen ? (
+                      <ChevronDown className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                     ) : (
-                      <ChevronDown className="w-3.5 h-3.5 text-stone-400" />
+                      <ChevronRight className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                     )}
-                    {isCollapsed ? (
-                      <Folder className="w-3.5 h-3.5 text-blue-500" />
+                    {isOpen ? (
+                      <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                     ) : (
-                      <FolderOpen className="w-3.5 h-3.5 text-blue-500" />
+                      <Folder className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                     )}
                     <span>{getFolderLabel(folder)}</span>
                     <span className="text-[10px] font-normal text-stone-400 lowercase font-mono ml-0.5">
@@ -584,11 +591,11 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                 </div>
 
                 {/* Sub-directories and Files */}
-                {!isCollapsed && (
-                  <div className="space-y-1 pt-0.5 pl-1.5">
+                {isOpen && (
+                  <div className="ml-3 pl-2 border-l border-stone-200/80 space-y-0.5 pt-0.5">
                     {/* Inline Project creation input */}
                     {isAddingProject && (
-                      <div className="p-2 bg-blue-50/80 border border-blue-200 rounded-lg ml-3 my-1">
+                      <div className="p-2 bg-blue-50/80 border border-blue-200 rounded-lg my-1">
                         <span className="text-[10px] font-semibold text-blue-900 block mb-1">
                           New Project Sub-Directory:
                         </span>
@@ -626,7 +633,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                     {/* Project Sub-directories */}
                     {distinctProjects.map((projSlug) => {
                       const projectKey = `projects/${projSlug}`;
-                      const isProjCollapsed = !!collapsedSubfolders[projectKey] && !searchQuery.trim();
+                      const isProjOpen = isSubfolderOpen(projectKey);
                       const projectFilesInSub = folderFiles.filter((f) => f.folder === projectKey);
 
                       // Human-friendly project label
@@ -636,20 +643,20 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                         .join(' ');
 
                       return (
-                        <div key={projectKey} className="ml-2 border-l border-blue-200/60 pl-1.5 space-y-0.5">
+                        <div key={projectKey} className="space-y-0.5">
                           {/* Project Sub-directory Header */}
-                          <div className="flex items-center justify-between px-2 py-1 text-stone-600 hover:text-stone-900 rounded-md hover:bg-blue-50/60 group/proj">
+                          <div className="flex items-center justify-between px-2 py-1 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group/proj">
                             <button
                               type="button"
                               onClick={() => toggleSubfolder(projectKey)}
                               className="flex items-center gap-1.5 font-medium text-xs text-stone-700 hover:text-stone-900 cursor-pointer min-w-0"
                             >
-                              {isProjCollapsed ? (
-                                <ChevronRight className="w-3 h-3 text-stone-400 shrink-0" />
+                              {isProjOpen ? (
+                                <ChevronDown className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                               ) : (
-                                <ChevronDown className="w-3 h-3 text-stone-400 shrink-0" />
+                                <ChevronRight className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                               )}
-                              <Folder className="w-3 h-3 text-blue-600 shrink-0" />
+                              <Folder className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                               <span className="font-semibold truncate max-w-[130px]" title={projectKey}>
                                 {projectLabel}
                               </span>
@@ -669,9 +676,9 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                           </div>
 
                           {/* Project Files */}
-                          {!isProjCollapsed && (
-                            <div className="space-y-0.5">
-                              {projectFilesInSub.map((file) => renderFileItem(file, true))}
+                          {isProjOpen && (
+                            <div className="ml-3 pl-2 border-l border-stone-200/80 space-y-0.5 pt-0.5">
+                              {projectFilesInSub.map((file) => renderFileItem(file))}
                             </div>
                           )}
                         </div>
@@ -680,8 +687,14 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
 
                     {/* Root Project Files if any */}
                     {rootProjectFiles.length > 0 && (
-                      <div className="space-y-0.5 pt-1">
-                        {rootProjectFiles.map((file) => renderFileItem(file, true))}
+                      <div className="space-y-0.5 pt-0.5">
+                        {rootProjectFiles.map((file) => renderFileItem(file))}
+                      </div>
+                    )}
+
+                    {folderFiles.length === 0 && (
+                      <div className="px-2 py-1 text-[11px] text-stone-400 italic">
+                        Empty projects folder
                       </div>
                     )}
                   </div>
@@ -708,19 +721,19 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
             return (
               <div key={folder} className="space-y-0.5">
                 {/* Folder Header */}
-                <div className="flex items-center justify-between px-2 py-1 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group">
+                <div className="flex items-center justify-between px-2 py-1.5 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group">
                   <button
                     type="button"
                     id={`folder-btn-${folder}`}
                     onClick={() => toggleFolder(folder)}
-                    className="flex items-center gap-1.5 font-semibold text-[11px] tracking-wide uppercase text-stone-500 hover:text-stone-800 cursor-pointer"
+                    className="flex items-center gap-1.5 font-semibold text-xs tracking-wider uppercase text-stone-500 hover:text-stone-800 cursor-pointer"
                   >
-                    {isCollapsed ? (
-                      <ChevronRight className="w-3.5 h-3.5 text-stone-400" />
+                    {isOpen ? (
+                      <ChevronDown className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                     ) : (
-                      <ChevronDown className="w-3.5 h-3.5 text-stone-400" />
+                      <ChevronRight className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                     )}
-                    <Archive className="w-3.5 h-3.5 text-purple-500" />
+                    <Archive className="w-3.5 h-3.5 text-purple-500 shrink-0" />
                     <span>{getFolderLabel(folder)}</span>
                     <span className="text-[10px] font-normal text-stone-400 lowercase font-mono ml-0.5">
                       ({folderFiles.length})
@@ -752,11 +765,11 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                 </div>
 
                 {/* Sub-directories and Files */}
-                {!isCollapsed && (
-                  <div className="space-y-1 pt-0.5 pl-1.5">
+                {isOpen && (
+                  <div className="ml-3 pl-2 border-l border-stone-200/80 space-y-0.5 pt-0.5">
                     {/* Inline Year creation input */}
                     {isAddingYear && (
-                      <div className="p-2 bg-purple-50/80 border border-purple-200 rounded-lg ml-3 my-1">
+                      <div className="p-2 bg-purple-50/80 border border-purple-200 rounded-lg my-1">
                         <span className="text-[10px] font-semibold text-purple-900 block mb-1">
                           New Archive Year Sub-Directory:
                         </span>
@@ -794,24 +807,24 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                     {/* Year Sub-directories */}
                     {distinctYears.map((year) => {
                       const yearKey = `archive/${year}`;
-                      const isYearCollapsed = !!collapsedSubfolders[yearKey] && !searchQuery.trim();
+                      const isYearOpen = isSubfolderOpen(yearKey);
                       const yearFiles = folderFiles.filter((f) => f.folder === yearKey);
 
                       return (
-                        <div key={yearKey} className="ml-2 border-l border-purple-200/60 pl-1.5 space-y-0.5">
+                        <div key={yearKey} className="space-y-0.5">
                           {/* Year Sub-directory Header */}
-                          <div className="flex items-center justify-between px-2 py-1 text-stone-600 hover:text-stone-900 rounded-md hover:bg-purple-50/60 group/year">
+                          <div className="flex items-center justify-between px-2 py-1 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group/year">
                             <button
                               type="button"
                               onClick={() => toggleSubfolder(yearKey)}
                               className="flex items-center gap-1.5 font-medium text-xs text-stone-700 hover:text-stone-900 cursor-pointer"
                             >
-                              {isYearCollapsed ? (
-                                <ChevronRight className="w-3 h-3 text-stone-400" />
+                              {isYearOpen ? (
+                                <ChevronDown className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                               ) : (
-                                <ChevronDown className="w-3 h-3 text-stone-400" />
+                                <ChevronRight className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                               )}
-                              <Calendar className="w-3 h-3 text-purple-600" />
+                              <Calendar className="w-3.5 h-3.5 text-purple-600 shrink-0" />
                               <span className="font-mono font-semibold">{year}</span>
                               <span className="text-[10px] text-stone-400 font-mono">
                                 ({yearFiles.length})
@@ -829,9 +842,9 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                           </div>
 
                           {/* Year Files */}
-                          {!isYearCollapsed && (
-                            <div className="space-y-0.5">
-                              {yearFiles.map((file) => renderFileItem(file, true))}
+                          {isYearOpen && (
+                            <div className="ml-3 pl-2 border-l border-stone-200/80 space-y-0.5 pt-0.5">
+                              {yearFiles.map((file) => renderFileItem(file))}
                             </div>
                           )}
                         </div>
@@ -840,8 +853,8 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
 
                     {/* Root Archive Files if any */}
                     {rootArchiveFiles.length > 0 && (
-                      <div className="space-y-0.5 pt-1">
-                        {rootArchiveFiles.map((file) => renderFileItem(file, true))}
+                      <div className="space-y-0.5 pt-0.5">
+                        {rootArchiveFiles.map((file) => renderFileItem(file))}
                       </div>
                     )}
 
@@ -874,22 +887,22 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
             return (
               <div key={folder} className="space-y-0.5">
                 {/* Skills Header */}
-                <div className="flex items-center justify-between px-2 py-1 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group">
+                <div className="flex items-center justify-between px-2 py-1.5 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group">
                   <button
                     type="button"
                     id={`folder-btn-${folder}`}
                     onClick={() => toggleFolder(folder)}
-                    className="flex items-center gap-1.5 font-semibold text-[11px] tracking-wide uppercase text-stone-500 hover:text-stone-800 cursor-pointer"
+                    className="flex items-center gap-1.5 font-semibold text-xs tracking-wider uppercase text-stone-500 hover:text-stone-800 cursor-pointer"
                   >
-                    {isCollapsed ? (
-                      <ChevronRight className="w-3.5 h-3.5 text-stone-400" />
+                    {isOpen ? (
+                      <ChevronDown className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                     ) : (
-                      <ChevronDown className="w-3.5 h-3.5 text-stone-400" />
+                      <ChevronRight className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                     )}
-                    {isCollapsed ? (
-                      <Folder className="w-3.5 h-3.5 text-emerald-500" />
+                    {isOpen ? (
+                      <FolderOpen className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                     ) : (
-                      <FolderOpen className="w-3.5 h-3.5 text-emerald-500" />
+                      <Folder className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                     )}
                     <span>{getFolderLabel(folder)}</span>
                     <span className="text-[10px] font-normal text-stone-400 lowercase font-mono ml-0.5">
@@ -909,12 +922,12 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                 </div>
 
                 {/* Sub-directories and Files */}
-                {!isCollapsed && (
-                  <div className="space-y-1 pt-0.5 pl-1.5">
+                {isOpen && (
+                  <div className="ml-3 pl-2 border-l border-stone-200/80 space-y-0.5 pt-0.5">
                     {/* Skill Sub-directories */}
                     {distinctSkills.map((skillSlug) => {
                       const skillKey = `skills/${skillSlug}`;
-                      const isSkillCollapsed = !!collapsedSubfolders[skillKey] && !searchQuery.trim();
+                      const isSkillOpen = isSubfolderOpen(skillKey);
                       const skillFilesInSub = folderFiles.filter(
                         (f) =>
                           f.folder.toLowerCase() === skillKey.toLowerCase() ||
@@ -927,19 +940,19 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                         .join(' ');
 
                       return (
-                        <div key={skillKey} className="ml-2 border-l border-emerald-200/60 pl-1.5 space-y-0.5">
-                          <div className="flex items-center justify-between px-2 py-1 text-stone-600 hover:text-stone-900 rounded-md hover:bg-emerald-50/60 group/skill">
+                        <div key={skillKey} className="space-y-0.5">
+                          <div className="flex items-center justify-between px-2 py-1 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group/skill">
                             <button
                               type="button"
                               onClick={() => toggleSubfolder(skillKey)}
                               className="flex items-center gap-1.5 font-medium text-xs text-stone-700 hover:text-stone-900 cursor-pointer min-w-0"
                             >
-                              {isSkillCollapsed ? (
-                                <ChevronRight className="w-3 h-3 text-stone-400 shrink-0" />
+                              {isSkillOpen ? (
+                                <ChevronDown className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                               ) : (
-                                <ChevronDown className="w-3 h-3 text-stone-400 shrink-0" />
+                                <ChevronRight className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                               )}
-                              <Bot className="w-3 h-3 text-emerald-600 shrink-0" />
+                              <Bot className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                               <span className="font-semibold truncate max-w-[130px]" title={skillKey}>
                                 {skillLabel}
                               </span>
@@ -954,13 +967,13 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                               title={`Add file to ${skillSlug}`}
                               className="p-0.5 opacity-0 group-hover/skill:opacity-100 hover:bg-emerald-100 text-emerald-800 rounded cursor-pointer transition-opacity shrink-0"
                             >
-                              <Plus className="w-3 h-3" />
+                              <Plus className="w-3.5 h-3.5" />
                             </button>
                           </div>
 
-                          {!isSkillCollapsed && (
-                            <div className="space-y-0.5">
-                              {skillFilesInSub.map((file) => renderFileItem(file, true))}
+                          {isSkillOpen && (
+                            <div className="ml-3 pl-2 border-l border-stone-200/80 space-y-0.5 pt-0.5">
+                              {skillFilesInSub.map((file) => renderFileItem(file))}
                             </div>
                           )}
                         </div>
@@ -970,7 +983,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                     {/* Root Skill Files */}
                     {rootSkillFiles.length > 0 && (
                       <div className="space-y-0.5 pt-0.5">
-                        {rootSkillFiles.map((file) => renderFileItem(file, true))}
+                        {rootSkillFiles.map((file) => renderFileItem(file))}
                       </div>
                     )}
 
@@ -989,36 +1002,36 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
           return (
             <div key={folder} className="space-y-0.5">
               {/* Folder Header */}
-              <div className="flex items-center justify-between px-2 py-1 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group">
+              <div className="flex items-center justify-between px-2 py-1.5 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group">
                 <button
                   type="button"
                   id={`folder-btn-${folder}`}
                   onClick={() => toggleFolder(folder)}
-                  className="flex items-center gap-1.5 font-semibold text-[11px] tracking-wide uppercase text-stone-500 hover:text-stone-800 cursor-pointer"
+                  className="flex items-center gap-1.5 font-semibold text-xs tracking-wider uppercase text-stone-500 hover:text-stone-800 cursor-pointer"
                 >
-                  {isCollapsed ? (
-                    <ChevronRight className="w-3.5 h-3.5 text-stone-400" />
+                  {isOpen ? (
+                    <ChevronDown className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                   ) : (
-                    <ChevronDown className="w-3.5 h-3.5 text-stone-400" />
+                    <ChevronRight className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                   )}
-                  {isCollapsed ? (
+                  {isOpen ? (
                     folder === 'goals' ? (
-                      <Folder className="w-3.5 h-3.5 text-amber-500" />
+                      <FolderOpen className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                     ) : folder === 'skills' ? (
-                      <Folder className="w-3.5 h-3.5 text-emerald-500" />
+                      <FolderOpen className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                     ) : folder === 'notes' ? (
-                      <Folder className="w-3.5 h-3.5 text-stone-500" />
+                      <FolderOpen className="w-3.5 h-3.5 text-stone-500 shrink-0" />
                     ) : (
-                      <Folder className="w-3.5 h-3.5 text-stone-400" />
+                      <FolderOpen className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                     )
                   ) : folder === 'goals' ? (
-                    <FolderOpen className="w-3.5 h-3.5 text-amber-500" />
+                    <Folder className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                   ) : folder === 'skills' ? (
-                    <FolderOpen className="w-3.5 h-3.5 text-emerald-500" />
+                    <Folder className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                   ) : folder === 'notes' ? (
-                    <FolderOpen className="w-3.5 h-3.5 text-stone-500" />
+                    <Folder className="w-3.5 h-3.5 text-stone-500 shrink-0" />
                   ) : (
-                    <FolderOpen className="w-3.5 h-3.5 text-stone-400" />
+                    <Folder className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                   )}
                   <span>{getFolderLabel(folder)}</span>
                   <span className="text-[10px] font-normal text-stone-400 lowercase font-mono ml-0.5">
@@ -1038,14 +1051,14 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
               </div>
 
               {/* Files in this Folder */}
-              {!isCollapsed && (
-                <div className="space-y-0.5 pt-0.5 pl-1.5">
+              {isOpen && (
+                <div className="ml-3 pl-2 border-l border-stone-200/80 space-y-0.5 pt-0.5">
                   {folderFiles.length === 0 ? (
                     <div className="px-2 py-1 text-[11px] text-stone-400 italic">
                       Empty folder
                     </div>
                   ) : (
-                    folderFiles.map((file) => renderFileItem(file, true))
+                    folderFiles.map((file) => renderFileItem(file))
                   )}
                 </div>
               )}

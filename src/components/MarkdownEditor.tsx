@@ -26,11 +26,13 @@ import {
   Check,
   X,
   AlertTriangle,
+  Calendar,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { VaultFile, FileFrontmatter, DriveConnectionStatus } from '../types';
 import { MarkdownPreview } from './MarkdownPreview';
 import { parseFrontmatter, stringifyWithFrontmatter } from '../utils/markdownParser';
+import { getTodayYYMMDD } from '../utils/date';
 
 interface MarkdownEditorProps {
   file: VaultFile;
@@ -113,6 +115,38 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         start + before.length + selection.length
       );
     }, 0);
+  };
+
+  // Handles textarea content changes and expands @today to YY-MM-DD string
+  const handleContentChangeWithToday = (val: string, cursor?: number | null) => {
+    if (/@today/i.test(val)) {
+      const todayStr = getTodayYYMMDD();
+      if (typeof cursor === 'number') {
+        const beforeCursor = val.slice(0, cursor);
+        if (/@today$/i.test(beforeCursor)) {
+          const match = beforeCursor.match(/@today$/i)!;
+          const matchLen = match[0].length;
+          const newBefore = beforeCursor.slice(0, -matchLen) + todayStr;
+          const afterCursor = val.slice(cursor);
+          const replaced = newBefore + afterCursor;
+          onChangeContent(replaced);
+
+          const newCursor = newBefore.length;
+          requestAnimationFrame(() => {
+            if (textareaRef.current) {
+              textareaRef.current.selectionStart = newCursor;
+              textareaRef.current.selectionEnd = newCursor;
+            }
+          });
+          return;
+        }
+      }
+      const replaced = val.replace(/@today/gi, todayStr);
+      onChangeContent(replaced);
+      return;
+    }
+
+    onChangeContent(val);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -307,6 +341,21 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                   ))}
               </div>
             )}
+          </div>
+
+          {/* Today's Date Button (YY-MM-DD string) */}
+          <div className="flex items-center border border-stone-200 rounded-md bg-white p-0.5 shadow-2xs">
+            <button
+              type="button"
+              id="btn-insert-today"
+              title={`Insert today's date (${getTodayYYMMDD()}) or type @today`}
+              onClick={() => insertText(getTodayYYMMDD())}
+              className="flex items-center gap-1.5 px-2 py-1 hover:bg-stone-100 rounded text-stone-700 text-xs font-mono group"
+            >
+              <Calendar className="w-3.5 h-3.5 text-stone-500 group-hover:text-blue-600 transition-colors" />
+              <span className="font-semibold text-stone-800">{getTodayYYMMDD()}</span>
+              <span className="text-[10px] text-stone-400 group-hover:text-stone-600 font-sans">(@today)</span>
+            </button>
           </div>
         </div>
 
@@ -609,10 +658,10 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               ref={textareaRef}
               id="markdown-source-textarea"
               value={file.content}
-              onChange={(e) => onChangeContent(e.target.value)}
+              onChange={(e) => handleContentChangeWithToday(e.target.value, e.target.selectionStart)}
               onKeyDown={handleKeyDown}
               spellCheck={false}
-              placeholder="Write markdown here..."
+              placeholder="Write markdown here... (type @today for date)"
               className="flex-1 p-4 md:p-6 font-mono text-xs md:text-sm text-stone-900 bg-transparent resize-none focus:outline-hidden leading-relaxed"
             />
           </div>
