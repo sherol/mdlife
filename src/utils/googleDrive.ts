@@ -154,21 +154,53 @@ export async function saveFileToDrive(
   const token = await getAccessToken();
   if (!token) throw new Error('Not authenticated with Google');
 
+  // 1. If file already has a known Google Drive file ID, update it directly in place!
+  if (file.driveFileId) {
+    try {
+      const uploadRes = await fetch(
+        `https://www.googleapis.com/upload/drive/v3/files/${file.driveFileId}?uploadType=media`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'text/markdown; charset=utf-8',
+          },
+          body: file.content,
+        }
+      );
+      if (uploadRes.ok) {
+        return { fileId: file.driveFileId, isNew: false };
+      }
+      if (uploadRes.status === 401) {
+        markTokenExpired('Google Drive session expired (401)');
+        throw new Error('Google Drive session expired (401)');
+      }
+      // If 404 (file removed from Drive) or other error, fall through to folder search
+    } catch (err: any) {
+      if (err?.message?.includes('401') || err?.message?.includes('expired')) {
+        throw err;
+      }
+      console.warn(`Direct update by driveFileId failed, falling back to folder search:`, err);
+    }
+  }
+
+  // 2. Resolve destination folder ID safely using resolveDriveFolderId
   let resolvedFolderId = targetFolderId;
   if (!resolvedFolderId) {
     const { rootId } = await getVaultFolderHierarchy();
     resolvedFolderId = await resolveDriveFolderId(file.folder, rootId);
   }
 
-  // Check if file already exists in this folder
-  const fileName = file.name.endsWith('.md') ? file.name : `${file.name}.md`;
-  const q = `name = '${fileName}' and '${resolvedFolderId}' in parents and trashed = false`;
+  // Check if file already exists in this folder (prevent duplicate creation)
+  const baseName = file.name.replace(/\.md$/i, '');
+  const fileName = `${baseName}.md`;
+  const q = `'${resolvedFolderId}' in parents and trashed = false and (name = '${fileName}' or name = '${baseName}')`;
   const searchRes = await driveFetch(`files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
   const data = await searchRes.json();
 
   if (data.files && data.files.length > 0) {
     const existingId = data.files[0].id;
-    // Update content via upload API
+    // Update existing file content via upload API
     const uploadRes = await fetch(
       `https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media`,
       {
@@ -188,7 +220,7 @@ export async function saveFileToDrive(
     }
     return { fileId: existingId, isNew: false };
   } else {
-    // Create metadata first
+    // Only create a new file if it does not already exist
     const createRes = await driveFetch('files', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -226,11 +258,24 @@ export async function saveFileToDrive(
 /**
  * Deletes a file from Google Drive
  */
-export async function deleteFileFromDrive(folderName: string, fileName: string): Promise<boolean> {
+export async function deleteFileFromDrive(
+  folderName: string,
+  fileName: string,
+  driveFileId?: string
+): Promise<boolean> {
+  if (driveFileId) {
+    try {
+      await driveFetch(`files/${driveFileId}`, { method: 'DELETE' });
+      return true;
+    } catch {
+      // Fall through to query if direct delete fails
+    }
+  }
   const { rootId } = await getVaultFolderHierarchy();
   const folderId = await resolveDriveFolderId(folderName, rootId);
-  const cleanName = fileName.endsWith('.md') ? fileName : `${fileName}.md`;
-  const q = `name = '${cleanName}' and '${folderId}' in parents and trashed = false`;
+  const baseName = fileName.replace(/\.md$/i, '');
+  const cleanName = `${baseName}.md`;
+  const q = `(name = '${cleanName}' or name = '${baseName}') and '${folderId}' in parents and trashed = false`;
   const searchRes = await driveFetch(`files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
   const data = await searchRes.json();
 
@@ -250,14 +295,28 @@ export async function deleteFileFromDrive(folderName: string, fileName: string):
 export async function renameFileInDrive(
   folderName: string,
   oldFileName: string,
-  newFileName: string
+  newFileName: string,
+  driveFileId?: string
 ): Promise<boolean> {
+  const cleanNewName = newFileName.endsWith('.md') ? newFileName : `${newFileName}.md`;
+  if (driveFileId) {
+    try {
+      await driveFetch(`files/${driveFileId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: cleanNewName }),
+      });
+      return true;
+    } catch {
+      // Fall through
+    }
+  }
   const { rootId } = await getVaultFolderHierarchy();
   const folderId = await resolveDriveFolderId(folderName, rootId);
-  const cleanOldName = oldFileName.endsWith('.md') ? oldFileName : `${oldFileName}.md`;
-  const cleanNewName = newFileName.endsWith('.md') ? newFileName : `${newFileName}.md`;
+  const baseOld = oldFileName.replace(/\.md$/i, '');
+  const cleanOldName = `${baseOld}.md`;
 
-  const q = `name = '${cleanOldName}' and '${folderId}' in parents and trashed = false`;
+  const q = `(name = '${cleanOldName}' or name = '${baseOld}') and '${folderId}' in parents and trashed = false`;
   const searchRes = await driveFetch(`files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
   const data = await searchRes.json();
 
@@ -401,6 +460,7 @@ export async function importFilesFromDrive(options: ImportDriveOptions = {}): Pr
 
             const fileObj: VaultFile = {
               id: filePath,
+              driveFileId: item.id,
               name: cleanName,
               path: filePath,
               folder: currentFolder,
@@ -545,6 +605,7 @@ export async function importFilesFromDrive(options: ImportDriveOptions = {}): Pr
 
             importedFiles.push({
               id: filePath,
+              driveFileId: sf.id,
               name: cleanName,
               path: filePath,
               folder: skillFolder,

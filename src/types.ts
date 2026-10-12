@@ -22,6 +22,7 @@ export interface FileFrontmatter {
 
 export interface VaultFile {
   id: string; // unique path or uuid, e.g. "goals/ai-mastery.md"
+  driveFileId?: string; // Direct Google Drive file ID for in-place updates without duplicating
   name: string; // "ai-mastery.md"
   path: string; // "goals/ai-mastery.md"
   folder: string; // "goals"

@@ -26,7 +26,6 @@ import { AgentSkillsLab } from './components/AgentSkillsLab';
 import { SkillPlaygroundModal } from './components/SkillPlaygroundModal';
 import { NewFileModal } from './components/NewFileModal';
 import { GoogleDriveSyncModal } from './components/GoogleDriveSyncModal';
-import { ConfirmDriveActionModal } from './components/ConfirmDriveActionModal';
 import { GoogleDriveStartScreen } from './components/GoogleDriveStartScreen';
 import { ReloadFromDriveModal } from './components/ReloadFromDriveModal';
 import { ShareProjectModal } from './components/ShareProjectModal';
@@ -71,7 +70,6 @@ export default function App({ forceOffline = false }: AppProps) {
   const [isStartingSignIn, setIsStartingSignIn] = useState(false);
   const [startScreenError, setStartScreenError] = useState<string | null>(null);
   const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
-  const [confirmDriveFile, setConfirmDriveFile] = useState<VaultFile | null>(null);
   const [isSavingSingleFileToDrive, setIsSavingSingleFileToDrive] = useState(false);
   const [isDriveSyncing, setIsDriveSyncing] = useState(false);
   const [isRefreshingDrive, setIsRefreshingDrive] = useState(false);
@@ -131,8 +129,11 @@ export default function App({ forceOffline = false }: AppProps) {
           const driveVersion = mergedMap.get(lf.id);
 
           if (hasUnsaved) {
-            // Keep local version with unsaved changes
-            mergedMap.set(lf.id, lf);
+            // Keep local version with unsaved changes, preserving driveFileId if known
+            mergedMap.set(lf.id, {
+              ...lf,
+              driveFileId: driveVersion?.driveFileId || lf.driveFileId,
+            });
             preservedLocalCount++;
           } else if (driveVersion) {
             // If local version has a significantly newer updatedAt timestamp, preserve it
@@ -460,9 +461,13 @@ export default function App({ forceOffline = false }: AppProps) {
     if (googleUser) {
       try {
         setIsSavingSingleFileToDrive(true);
-        await saveFileToDrive(newFile);
-        setFiles((prev) => [newFile, ...prev]);
-        setSelectedFileId(newFile.id);
+        const saveRes = await saveFileToDrive(newFile);
+        const createdWithId: VaultFile = {
+          ...newFile,
+          driveFileId: saveRes.fileId,
+        };
+        setFiles((prev) => [createdWithId, ...prev]);
+        setSelectedFileId(createdWithId.id);
         setActiveTab('editor');
         setToastNotification({
           type: 'success',
@@ -498,7 +503,7 @@ export default function App({ forceOffline = false }: AppProps) {
 
     if (googleUser) {
       try {
-        await deleteFileFromDrive(fileToDelete.folder, fileToDelete.name);
+        await deleteFileFromDrive(fileToDelete.folder, fileToDelete.name, fileToDelete.driveFileId);
         setToastNotification({
           type: 'info',
           text: `Deleted "${fileToDelete.name}" from Google Drive.`,
@@ -565,7 +570,12 @@ export default function App({ forceOffline = false }: AppProps) {
 
     if (googleUser) {
       try {
-        const renamed = await renameFileInDrive(fileToRename.folder, oldName, cleanName);
+        const renamed = await renameFileInDrive(
+          fileToRename.folder,
+          oldName,
+          cleanName,
+          fileToRename.driveFileId
+        );
         if (!renamed) {
           // If PATCH failed to locate the old file, save as new and delete old
           await saveFileToDrive(renamedFile);
@@ -832,34 +842,39 @@ export default function App({ forceOffline = false }: AppProps) {
     });
   };
 
-  const handleRequestSaveFileToDrive = (file: VaultFile) => {
+  const handleRequestSaveFileToDrive = async (file: VaultFile) => {
     if (!googleUser) {
       setIsDriveModalOpen(true);
       return;
     }
-    setConfirmDriveFile(file);
-  };
 
-  const handleConfirmedSaveFileToDrive = async () => {
-    if (!confirmDriveFile) return;
-    const target = confirmDriveFile;
-    setConfirmDriveFile(null);
+    if (driveStatus === 'expired') {
+      handleReconnectDrive();
+      return;
+    }
+
     try {
       setIsSavingSingleFileToDrive(true);
-      const { folderMap, rootId } = await getVaultFolderHierarchy();
-      const folderId = folderMap[target.folder] || rootId;
-      const result = await saveFileToDrive(target, folderId);
+      // saveFileToDrive uses driveFileId or exact folder resolution to update in-place without duplicating
+      const result = await saveFileToDrive(file);
+
+      // Bind the driveFileId to the file in state and local cache
+      setFiles((prev) =>
+        prev.map((f) => (f.id === file.id ? { ...f, driveFileId: result.fileId } : f))
+      );
+
       // Remove from unsaved local edits
       setUnsavedFileIds((prev) => {
         const next = new Set(prev);
-        next.delete(target.id);
+        next.delete(file.id);
         return next;
       });
+
       setToastNotification({
         type: 'success',
         text: result.isNew
-          ? `Created "${target.name}" in Google Drive (/Markdown Life Vault/${target.folder})!`
-          : `Updated "${target.name}" in Google Drive (/Markdown Life Vault/${target.folder})!`,
+          ? `Saved "${file.name}" to Google Drive (/Markdown Life Vault/${file.folder})`
+          : `Saved changes to Google Drive in-place (${file.name})`,
       });
     } catch (err: any) {
       console.error('Failed to save file to Google Drive:', err);
@@ -872,7 +887,7 @@ export default function App({ forceOffline = false }: AppProps) {
       }
       setToastNotification({
         type: 'error',
-        text: err?.message || `Failed to save ${target.name} to Google Drive`,
+        text: err?.message || `Failed to save ${file.name} to Google Drive`,
       });
     } finally {
       setIsSavingSingleFileToDrive(false);
@@ -1219,16 +1234,6 @@ export default function App({ forceOffline = false }: AppProps) {
           onSignOut={handleSignOutGoogle}
           files={files}
           onImportFilesFromDrive={() => fetchFilesFromDrive(false)}
-        />
-      )}
-
-      {/* Explicit User Confirmation for Single File Save to Drive */}
-      {confirmDriveFile && (
-        <ConfirmDriveActionModal
-          isOpen={!!confirmDriveFile}
-          onClose={() => setConfirmDriveFile(null)}
-          onConfirm={handleConfirmedSaveFileToDrive}
-          file={confirmDriveFile}
         />
       )}
 
