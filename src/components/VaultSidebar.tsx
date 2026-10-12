@@ -21,6 +21,7 @@ import {
   Archive,
   Calendar,
   FolderPlus,
+  Share2,
 } from 'lucide-react';
 import { VaultFile, FileCategory } from '../types';
 import { getTaskProgress } from '../utils/markdownParser';
@@ -35,6 +36,7 @@ interface VaultSidebarProps {
   onRenameFile: (id: string, newFileName: string) => Promise<boolean> | boolean;
   onQuickNewFileInFolder: (folder: string) => void;
   onDropFiles: (fileList: FileList) => void;
+  onShareProject?: (projectFolder: string) => void;
 }
 
 export const VaultSidebar: React.FC<VaultSidebarProps> = ({
@@ -46,6 +48,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
   onRenameFile,
   onQuickNewFileInFolder,
   onDropFiles,
+  onShareProject,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<'all' | FileCategory>('all');
@@ -569,6 +572,20 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                   </button>
 
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {onShareProject && (
+                      <button
+                        type="button"
+                        title="Share projects with other Google Accounts"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onShareProject('projects');
+                        }}
+                        className="text-[10px] font-medium text-stone-600 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 border border-stone-200 px-1.5 py-0.5 rounded cursor-pointer flex items-center gap-0.5"
+                      >
+                        <Share2 className="w-2.5 h-2.5 text-blue-600" />
+                        Share
+                      </button>
+                    )}
                     <button
                       type="button"
                       title="Add Project sub-directory"
@@ -665,14 +682,29 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                               </span>
                             </button>
 
-                            <button
-                              type="button"
-                              onClick={() => onQuickNewFileInFolder(projectKey)}
-                              title={`Add new file to ${projSlug}`}
-                              className="p-0.5 opacity-0 group-hover/proj:opacity-100 hover:bg-blue-100 text-blue-800 rounded cursor-pointer transition-opacity shrink-0"
-                            >
-                              <Plus className="w-3 h-3" />
-                            </button>
+                            <div className="flex items-center gap-0.5 opacity-0 group-hover/proj:opacity-100 transition-opacity shrink-0">
+                              {onShareProject && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onShareProject(projectKey);
+                                  }}
+                                  title={`Share project "${projectLabel}" with other Google Accounts`}
+                                  className="p-0.5 hover:bg-blue-100 text-blue-700 rounded cursor-pointer transition-colors"
+                                >
+                                  <Share2 className="w-3 h-3" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => onQuickNewFileInFolder(projectKey)}
+                                title={`Add new file to ${projSlug}`}
+                                className="p-0.5 hover:bg-blue-100 text-blue-800 rounded cursor-pointer transition-colors"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
                           </div>
 
                           {/* Project Files */}

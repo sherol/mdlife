@@ -365,8 +365,8 @@ export async function importFilesFromDrive(options: ImportDriveOptions = {}): Pr
           return true;
         });
 
-        // Concurrently fetch file contents in batches of 6
-        await mapConcurrent(eligibleItems, 6, async (item: any) => {
+        // Concurrently fetch file contents in batches of 10 for faster sign-in
+        await mapConcurrent(eligibleItems, 10, async (item: any) => {
           try {
             const cleanName = item.name.endsWith('.md') ? item.name : `${item.name}.md`;
             const currentFolder = relativePath || (isSkillsFolder ? 'skills' : 'notes');
@@ -471,8 +471,8 @@ export async function importFilesFromDrive(options: ImportDriveOptions = {}): Pr
   // Scan root directory and all its child sub-directories once
   await scanDirectory(rootId, '');
 
-  // 3. Fallback / Global Search ONLY if explicitly requested or if vault is completely empty
-  if (includeGlobalSearch || importedFiles.length === 0) {
+  // 3. Optional Global Search ONLY if explicitly requested
+  if (includeGlobalSearch) {
     onProgress?.('Searching external folders for Agent Skills...');
     try {
       const qSkillsGlobal = `mimeType = 'application/vnd.google-apps.folder' and trashed = false and (name = 'skills' or name = 'Skills' or name = 'SKILLS' or name = 'agent-skills' or name = 'Agent Skills')`;
@@ -569,3 +569,123 @@ export async function importFilesFromDrive(options: ImportDriveOptions = {}): Pr
 
   return importedFiles;
 }
+
+export interface DrivePermission {
+  id: string;
+  type: string; // 'user' | 'group' | 'domain' | 'anyone'
+  role: 'owner' | 'organizer' | 'fileOrganizer' | 'writer' | 'commenter' | 'reader';
+  emailAddress?: string;
+  displayName?: string;
+  photoLink?: string;
+}
+
+export interface ProjectShareInfo {
+  folderId: string;
+  folderName: string;
+  projectPath: string;
+  webViewLink?: string;
+  permissions: DrivePermission[];
+  ownerEmail?: string;
+  ownerDisplayName?: string;
+}
+
+/**
+ * Gets or creates the project folder in Google Drive, retrieves its shareable webViewLink,
+ * and lists all current collaborators and permissions.
+ */
+export async function getProjectFolderShareInfo(projectPath: string): Promise<ProjectShareInfo> {
+  const { rootId } = await getVaultFolderHierarchy();
+  const folderId = await resolveDriveFolderId(projectPath, rootId);
+
+  // 1. Fetch folder metadata including webViewLink and owners
+  const folderRes = await driveFetch(
+    `files/${folderId}?fields=id,name,webViewLink,owners(displayName,emailAddress)`
+  );
+  const folderData = await folderRes.json();
+
+  // 2. Fetch permissions list
+  const permRes = await driveFetch(
+    `files/${folderId}/permissions?fields=permissions(id,type,role,emailAddress,displayName,photoLink)`
+  );
+  const permData = await permRes.json();
+
+  const permissions: DrivePermission[] = Array.isArray(permData.permissions) ? permData.permissions : [];
+  const owner = folderData.owners && folderData.owners[0];
+
+  return {
+    folderId,
+    folderName: folderData.name || projectPath.split('/').pop() || 'project',
+    projectPath,
+    webViewLink: folderData.webViewLink,
+    permissions,
+    ownerEmail: owner?.emailAddress,
+    ownerDisplayName: owner?.displayName,
+  };
+}
+
+/**
+ * Shares a project folder with a specific Google Account email address.
+ * Uses Google Drive's Permissions API (files.permissions.create).
+ */
+export async function shareProjectWithGoogleAccount(
+  folderId: string,
+  emailAddress: string,
+  role: 'reader' | 'commenter' | 'writer' = 'reader',
+  sendNotificationEmail: boolean = true
+): Promise<DrivePermission> {
+  const cleanEmail = emailAddress.trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    throw new Error('Please enter a valid Google Account email address.');
+  }
+
+  const queryParams = new URLSearchParams({
+    sendNotificationEmail: String(sendNotificationEmail),
+    fields: 'id,type,role,emailAddress,displayName,photoLink',
+  });
+
+  const res = await driveFetch(`files/${folderId}/permissions?${queryParams.toString()}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      role,
+      type: 'user',
+      emailAddress: cleanEmail,
+    }),
+  });
+
+  const createdPerm: DrivePermission = await res.json();
+  return createdPerm;
+}
+
+/**
+ * Updates the role of an existing collaborator on a project folder.
+ */
+export async function updateProjectPermissionRole(
+  folderId: string,
+  permissionId: string,
+  newRole: 'reader' | 'commenter' | 'writer'
+): Promise<DrivePermission> {
+  const res = await driveFetch(`files/${folderId}/permissions/${permissionId}?fields=id,role,emailAddress,displayName`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      role: newRole,
+    }),
+  });
+
+  return await res.json();
+}
+
+/**
+ * Removes a collaborator's access from a project folder.
+ */
+export async function removeProjectPermission(
+  folderId: string,
+  permissionId: string
+): Promise<boolean> {
+  await driveFetch(`files/${folderId}/permissions/${permissionId}`, {
+    method: 'DELETE',
+  });
+  return true;
+}
+

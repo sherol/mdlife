@@ -27,6 +27,7 @@ import {
   X,
   AlertTriangle,
   Calendar,
+  Share2,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { VaultFile, FileFrontmatter, DriveConnectionStatus } from '../types';
@@ -49,6 +50,7 @@ interface MarkdownEditorProps {
   isUnsavedToDrive?: boolean;
   onReconnectDrive?: () => void;
   googleUser?: User | null;
+  onShareProject?: (projectFolder: string) => void;
 }
 
 export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
@@ -66,6 +68,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   isUnsavedToDrive = false,
   onReconnectDrive,
   googleUser,
+  onShareProject,
 }) => {
   const [viewMode, setViewMode] = useState<'split' | 'edit' | 'preview'>('split');
   const [showMetadataDrawer, setShowMetadataDrawer] = useState(false);
@@ -93,6 +96,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const words = file.content.trim() ? file.content.trim().split(/\s+/).length : 0;
   const chars = file.content.length;
   const lines = file.content.split('\n').length;
+  const isProjectFile = file.folder.startsWith('projects') || file.frontmatter.category === 'projects';
 
   // Insert markdown snippet at current cursor or selection
   const insertText = (before: string, after: string = '', defaultText: string = '') => {
@@ -425,6 +429,20 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               {isUnsavedToDrive && driveStatus !== 'expired' && (
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" title="Unsaved changes pending" />
               )}
+            </button>
+          )}
+
+          {/* Share Project with other Google Accounts button */}
+          {isProjectFile && onShareProject && (
+            <button
+              type="button"
+              id="btn-editor-share-project"
+              onClick={() => onShareProject(file.folder || 'projects')}
+              title="Share this project with other Google Accounts via Google Drive"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-blue-800 rounded-md transition-colors shadow-2xs font-medium cursor-pointer"
+            >
+              <Share2 className="w-3.5 h-3.5 text-blue-600" />
+              <span>Share Project</span>
             </button>
           )}
         </div>

@@ -29,6 +29,7 @@ import { GoogleDriveSyncModal } from './components/GoogleDriveSyncModal';
 import { ConfirmDriveActionModal } from './components/ConfirmDriveActionModal';
 import { GoogleDriveStartScreen } from './components/GoogleDriveStartScreen';
 import { ReloadFromDriveModal } from './components/ReloadFromDriveModal';
+import { ShareProjectModal } from './components/ShareProjectModal';
 
 interface AppProps {
   forceOffline?: boolean;
@@ -43,24 +44,20 @@ export default function App({ forceOffline = false }: AppProps) {
         window.location.search.includes('offline=true') ||
         window.location.search.includes('mock=true')));
 
-  // If user is in mock mode or previously selected offline mode, load local storage files; otherwise start empty until auth
+  // Instant Startup: Load cached files immediately so editor is ready with zero delay
   const [files, setFiles] = useState<VaultFile[]>(() => {
-    const bypassed = isMockMode || localStorage.getItem('md_vault_bypassed_auth') === 'true';
-    return bypassed ? loadVaultFiles() : [];
+    return loadVaultFiles();
   });
   const [selectedFileId, setSelectedFileId] = useState<string | null>(() => {
-    const bypassed = isMockMode || localStorage.getItem('md_vault_bypassed_auth') === 'true';
-    if (bypassed) {
-      const loaded = loadVaultFiles();
-      return loaded.length > 0 ? loaded[0].id : null;
-    }
-    return null;
+    const loaded = loadVaultFiles();
+    return loaded.length > 0 ? loaded[0].id : null;
   });
   const [activeTab, setActiveTab] = useState<ActiveTab>('editor');
   const [isExportingZip, setIsExportingZip] = useState(false);
   const [isNewFileModalOpen, setIsNewFileModalOpen] = useState(false);
   const [newFileInitialFolder, setNewFileInitialFolder] = useState<string>('goals');
   const [skillForPlayground, setSkillForPlayground] = useState<VaultFile | null>(null);
+  const [sharingProjectFolder, setSharingProjectFolder] = useState<string | null>(null);
 
   // Google Drive & Auth State
   const [googleUser, setGoogleUser] = useState<User | null>(null);
@@ -1078,6 +1075,7 @@ export default function App({ forceOffline = false }: AppProps) {
               onRenameFile={handleRenameFile}
               onQuickNewFileInFolder={handleOpenNewFileInFolder}
               onDropFiles={handleImportFiles}
+              onShareProject={(projectKey) => setSharingProjectFolder(projectKey)}
             />
 
             {/* Markdown Editor / Loading / Empty State */}
@@ -1156,6 +1154,7 @@ export default function App({ forceOffline = false }: AppProps) {
                 isUnsavedToDrive={currentFile ? unsavedFileIds.has(currentFile.id) : false}
                 onReconnectDrive={handleReconnectDrive}
                 googleUser={googleUser}
+                onShareProject={(folder) => setSharingProjectFolder(folder)}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center bg-white text-stone-400">
@@ -1242,6 +1241,19 @@ export default function App({ forceOffline = false }: AppProps) {
         onDiscardAndReload={handleDiscardAndReloadFromDrive}
         isProcessing={isRefreshingDrive}
       />
+
+      {/* Share Project Modal */}
+      {sharingProjectFolder && (
+        <ShareProjectModal
+          isOpen={!!sharingProjectFolder}
+          projectFolder={sharingProjectFolder}
+          onClose={() => setSharingProjectFolder(null)}
+          googleUser={googleUser}
+          driveStatus={driveStatus}
+          isMockMode={isMockMode}
+          onOpenConnectDrive={() => setIsDriveModalOpen(true)}
+        />
+      )}
     </div>
   );
 }
