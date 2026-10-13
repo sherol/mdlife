@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Folder,
   FolderOpen,
@@ -164,6 +164,23 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
     return 'notes';
   };
 
+  // Auto-expand folder and subfolder for currently selected file
+  useEffect(() => {
+    if (!selectedFileId) return;
+    const activeFile = files.find((f) => f.id === selectedFileId);
+    if (!activeFile) return;
+
+    const topFolder = getTopLevelCategory(activeFile);
+    if (topFolder) {
+      setOpenFolders((prev) => (prev[topFolder] ? prev : { ...prev, [topFolder]: true }));
+    }
+
+    if (activeFile.folder && activeFile.folder.includes('/')) {
+      const subKey = activeFile.folder;
+      setOpenSubfolders((prev) => (prev[subKey] ? prev : { ...prev, [subKey]: true }));
+    }
+  }, [selectedFileId, files]);
+
   // Filtered files
   const filteredFiles = files.filter((file) => {
     const fileCategory = getTopLevelCategory(file);
@@ -265,7 +282,6 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
       const formatted = sub.split(/[-_]/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
       title = `${formatted} (${file.name.replace(/\.md$/, '')})`;
     }
-    const status = file.frontmatter.status;
     const isEditing = file.id === editingFileId;
 
     if (isEditing) {
@@ -360,23 +376,6 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
             >
               <CheckCircle className="w-2.5 h-2.5" />
               {progress.completed}/{progress.total}
-            </span>
-          )}
-
-          {/* Status Indicator */}
-          {status && progress.total === 0 && (
-            <span
-              className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-mono ${
-                isSelected
-                  ? 'bg-stone-800 text-stone-200'
-                  : status === 'active' || status === 'in-progress'
-                  ? 'bg-amber-100 text-amber-800'
-                  : status === 'archived'
-                  ? 'bg-purple-100 text-purple-800'
-                  : 'bg-stone-100 text-stone-600'
-              }`}
-            >
-              {status}
             </span>
           )}
 
@@ -536,14 +535,16 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
             const distinctProjects = Array.from(
               new Set(
                 folderFiles
-                  .filter((f) => f.folder.startsWith('projects/'))
-                  .map((f) => f.folder.replace('projects/', '').split('/')[0])
+                  .filter((f) => f.folder && f.folder.toLowerCase().startsWith('projects/') && f.folder.split('/').length > 1)
+                  .map((f) => f.folder.replace(/^projects\//i, '').split('/')[0])
                   .filter(Boolean)
               )
             ).sort((a, b) => a.localeCompare(b));
 
-            // Any project files in root projects folder
-            const rootProjectFiles = folderFiles.filter((f) => f.folder === 'projects');
+            // Any project files in root projects folder or uncategorized
+            const rootProjectFiles = folderFiles.filter(
+              (f) => !f.folder || f.folder.toLowerCase() === 'projects' || !f.folder.toLowerCase().startsWith('projects/')
+            );
 
             return (
               <div key={folder} className="space-y-0.5">
@@ -553,7 +554,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                     type="button"
                     id={`folder-btn-${folder}`}
                     onClick={() => toggleFolder(folder)}
-                    className="flex items-center gap-1.5 font-semibold text-xs tracking-wider uppercase text-stone-500 hover:text-stone-800 cursor-pointer"
+                    className="flex items-center gap-1.5 font-semibold text-xs tracking-wider uppercase text-stone-500 hover:text-stone-800 cursor-pointer flex-1 min-w-0"
                   >
                     {isOpen ? (
                       <ChevronDown className="w-3.5 h-3.5 text-stone-400 shrink-0" />
@@ -565,13 +566,13 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                     ) : (
                       <Folder className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                     )}
-                    <span>{getFolderLabel(folder)}</span>
-                    <span className="text-[10px] font-normal text-stone-400 lowercase font-mono ml-0.5">
+                    <span className="truncate">{getFolderLabel(folder)}</span>
+                    <span className="text-[10px] font-normal text-stone-400 lowercase font-mono ml-0.5 shrink-0">
                       ({folderFiles.length})
                     </span>
                   </button>
 
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                     {onShareProject && (
                       <button
                         type="button"
@@ -580,27 +581,25 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                           e.stopPropagation();
                           onShareProject('projects');
                         }}
-                        className="text-[10px] font-medium text-stone-600 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 border border-stone-200 px-1.5 py-0.5 rounded cursor-pointer flex items-center gap-0.5"
+                        className="p-1 hover:bg-blue-100 text-stone-400 hover:text-blue-600 rounded cursor-pointer transition-colors"
                       >
-                        <Share2 className="w-2.5 h-2.5 text-blue-600" />
-                        Share
+                        <Share2 className="w-3.5 h-3.5" />
                       </button>
                     )}
                     <button
                       type="button"
                       title="Add Project sub-directory"
                       onClick={() => setIsAddingProject(true)}
-                      className="text-[10px] font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-1.5 py-0.5 rounded cursor-pointer flex items-center gap-0.5"
+                      className="p-1 hover:bg-stone-200 text-stone-400 hover:text-blue-600 rounded cursor-pointer transition-colors"
                     >
-                      <Plus className="w-2.5 h-2.5" />
-                      Project
+                      <FolderPlus className="w-3.5 h-3.5" />
                     </button>
                     <button
                       type="button"
                       id={`quick-add-${folder}`}
                       onClick={() => onQuickNewFileInFolder(distinctProjects[0] ? `projects/${distinctProjects[0]}` : 'projects/new-project')}
                       title="Quick new project file"
-                      className="p-1 hover:bg-stone-200 rounded text-stone-500 hover:text-stone-800 cursor-pointer"
+                      className="p-1 hover:bg-stone-200 text-stone-400 hover:text-stone-800 rounded cursor-pointer transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>
@@ -651,33 +650,41 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                     {distinctProjects.map((projSlug) => {
                       const projectKey = `projects/${projSlug}`;
                       const isProjOpen = isSubfolderOpen(projectKey);
-                      const projectFilesInSub = folderFiles.filter((f) => f.folder === projectKey);
+                      const projectFilesInSub = folderFiles.filter(
+                        (f) =>
+                          f.folder.toLowerCase() === projectKey.toLowerCase() ||
+                          f.folder.toLowerCase().startsWith(`${projectKey.toLowerCase()}/`)
+                      );
 
                       // Human-friendly project label
                       const projectLabel = projSlug
-                        .split('-')
+                        .split(/[-_]/)
                         .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
                         .join(' ');
 
                       return (
                         <div key={projectKey} className="space-y-0.5">
                           {/* Project Sub-directory Header */}
-                          <div className="flex items-center justify-between px-2 py-1 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group/proj">
+                          <div className="flex items-center justify-between px-2 py-1.5 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group/proj">
                             <button
                               type="button"
                               onClick={() => toggleSubfolder(projectKey)}
-                              className="flex items-center gap-1.5 font-medium text-xs text-stone-700 hover:text-stone-900 cursor-pointer min-w-0"
+                              className="flex items-center gap-1.5 font-medium text-xs text-stone-700 hover:text-stone-900 cursor-pointer flex-1 min-w-0"
                             >
                               {isProjOpen ? (
                                 <ChevronDown className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                               ) : (
                                 <ChevronRight className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                               )}
-                              <Folder className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                              <span className="font-semibold truncate max-w-[130px]" title={projectKey}>
+                              {isProjOpen ? (
+                                <FolderOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                              ) : (
+                                <Folder className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                              )}
+                              <span className="font-semibold truncate text-stone-800" title={projectKey}>
                                 {projectLabel}
                               </span>
-                              <span className="text-[10px] text-stone-400 font-mono shrink-0">
+                              <span className="text-[10px] text-stone-400 font-mono shrink-0 ml-1">
                                 ({projectFilesInSub.length})
                               </span>
                             </button>
@@ -691,7 +698,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                                     onShareProject(projectKey);
                                   }}
                                   title={`Share project "${projectLabel}" with other Google Accounts`}
-                                  className="p-0.5 hover:bg-blue-100 text-blue-700 rounded cursor-pointer transition-colors"
+                                  className="p-1 hover:bg-blue-100 text-stone-400 hover:text-blue-700 rounded cursor-pointer transition-colors"
                                 >
                                   <Share2 className="w-3 h-3" />
                                 </button>
@@ -700,7 +707,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                                 type="button"
                                 onClick={() => onQuickNewFileInFolder(projectKey)}
                                 title={`Add new file to ${projSlug}`}
-                                className="p-0.5 hover:bg-blue-100 text-blue-800 rounded cursor-pointer transition-colors"
+                                className="p-1 hover:bg-stone-200 text-stone-400 hover:text-stone-800 rounded cursor-pointer transition-colors"
                               >
                                 <Plus className="w-3 h-3" />
                               </button>
@@ -720,6 +727,11 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                     {/* Root Project Files if any */}
                     {rootProjectFiles.length > 0 && (
                       <div className="space-y-0.5 pt-0.5">
+                        {distinctProjects.length > 0 && (
+                          <div className="px-2 py-0.5 text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
+                            Files in /projects/
+                          </div>
+                        )}
                         {rootProjectFiles.map((file) => renderFileItem(file))}
                       </div>
                     )}
