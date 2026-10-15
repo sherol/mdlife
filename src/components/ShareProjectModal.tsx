@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import {
   Rocket,
   X,
@@ -13,7 +13,6 @@ import {
   HardDrive,
   Users,
   AlertCircle,
-  Folder,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { DriveConnectionStatus } from '../types';
@@ -25,6 +24,17 @@ import {
   updateProjectPermissionRole,
   removeProjectPermission,
 } from '../utils/googleDrive';
+import { Modal } from './Modal';
+
+type ShareRole = 'reader' | 'writer' | 'commenter';
+
+const ROLE_LABELS: Record<ShareRole, string> = {
+  writer: 'Editor',
+  commenter: 'Commenter',
+  reader: 'Viewer',
+};
+
+const roleLabel = (role: string) => ROLE_LABELS[role as ShareRole] || 'Viewer';
 
 interface ShareProjectModalProps {
   isOpen: boolean;
@@ -51,7 +61,7 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
 
   // New collaborator form states
   const [emailInput, setEmailInput] = useState('');
-  const [roleInput, setRoleInput] = useState<'reader' | 'writer' | 'commenter'>('writer');
+  const [roleInput, setRoleInput] = useState<ShareRole>('writer');
   const [sendNotification, setSendNotification] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -67,6 +77,10 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
     : 'All Projects';
 
   const isConnected = driveStatus === 'connected' && !isMockMode && !!googleUser;
+  // Sharing only works against real Google Drive permissions. The offline mock build keeps a
+  // clearly-labelled local simulation; a disconnected real vault cannot share at all.
+  const canShare = isConnected || isMockMode;
+  const titleId = useId();
 
   // Load share permissions when modal opens
   useEffect(() => {
@@ -80,11 +94,13 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
 
     if (isConnected) {
       loadDriveShareInfo();
-    } else {
-      // Mock / Offline mode fallback permissions from localStorage
+    } else if (isMockMode) {
+      // Offline mock build (mock.html): simulated permissions kept in localStorage
       loadMockShareInfo();
+    } else {
+      setShareInfo(null);
     }
-  }, [isOpen, projectFolder, isConnected]);
+  }, [isOpen, projectFolder, isConnected, isMockMode]);
 
   const loadDriveShareInfo = async () => {
     setIsLoading(true);
@@ -104,17 +120,7 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
     setIsLoading(true);
     try {
       const savedShares = localStorage.getItem(`mock_shares_${projectFolder}`);
-      const mockPerms: DrivePermission[] = savedShares
-        ? JSON.parse(savedShares)
-        : [
-            {
-              id: 'mock-1',
-              type: 'user',
-              role: 'reader',
-              displayName: 'Collaborator (Demo)',
-              emailAddress: 'teammate@example.com',
-            },
-          ];
+      const mockPerms: DrivePermission[] = savedShares ? JSON.parse(savedShares) : [];
 
       setShareInfo({
         folderId: `mock-folder-${projectSlug || 'root'}`,
@@ -135,6 +141,10 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
   const handleShare = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = emailInput.trim().toLowerCase();
+    if (!canShare) {
+      setError('Connect Google Drive to share this project.');
+      return;
+    }
     if (!cleanEmail || !cleanEmail.includes('@')) {
       setError('Please provide a valid Google Account email address.');
       return;
@@ -162,10 +172,12 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
         );
         setStatusMessage({
           type: 'success',
-          text: `Shared project with ${cleanEmail} (${roleInput === 'writer' ? 'Editor' : 'Viewer'})! Google Drive notification sent.`,
+          text: `Shared project with ${cleanEmail} (${roleLabel(roleInput)}).${
+            sendNotification ? ' Google Drive notification sent.' : ''
+          }`,
         });
-      } else {
-        // Offline / Mock simulated share
+      } else if (isMockMode) {
+        // Offline mock build: simulated share stored locally only
         const newPerm: DrivePermission = {
           id: `mock-${Date.now()}`,
           type: 'user',
@@ -178,8 +190,10 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
         setShareInfo((prev) => (prev ? { ...prev, permissions: updated } : null));
         setStatusMessage({
           type: 'success',
-          text: `Added ${cleanEmail} to project collaborators (offline mode).`,
+          text: `Added ${cleanEmail} to project collaborators (offline mock mode, not shared).`,
         });
+      } else {
+        throw new Error('Could not load the Google Drive folder for this project. Try reopening this dialog.');
       }
 
       setEmailInput('');
@@ -195,6 +209,8 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
     try {
       if (isConnected && shareInfo?.folderId) {
         await removeProjectPermission(shareInfo.folderId, permId);
+      } else if (!isMockMode) {
+        return;
       }
       setShareInfo((prev) => {
         if (!prev) return null;
@@ -214,7 +230,7 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
     }
   };
 
-  const handleRoleChange = async (permId: string, newRole: 'reader' | 'writer' | 'commenter') => {
+  const handleRoleChange = async (permId: string, newRole: ShareRole) => {
     try {
       if (isConnected && shareInfo?.folderId) {
         const updated = await updateProjectPermissionRole(shareInfo.folderId, permId, newRole);
@@ -226,17 +242,19 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
               }
             : null
         );
-      } else {
+      } else if (isMockMode) {
         setShareInfo((prev) => {
           if (!prev) return null;
           const nextPerms = prev.permissions.map((p) => (p.id === permId ? { ...p, role: newRole } : p));
           localStorage.setItem(`mock_shares_${projectFolder}`, JSON.stringify(nextPerms));
           return { ...prev, permissions: nextPerms };
         });
+      } else {
+        return;
       }
       setStatusMessage({
         type: 'success',
-        text: `Updated role to ${newRole === 'writer' ? 'Editor' : 'Viewer'}.`,
+        text: `Updated role to ${roleLabel(newRole)}.`,
       });
     } catch (err: any) {
       console.error('Error updating role:', err);
@@ -254,14 +272,12 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      labelledBy={titleId}
+      overlayClassName="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+      className="bg-white rounded-2xl shadow-2xl border border-stone-200 w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"
     >
-      <div
-        className="bg-white rounded-2xl shadow-2xl border border-stone-200 w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-stone-200 bg-stone-50/70 flex items-start justify-between">
           <div className="flex items-center gap-3">
@@ -270,7 +286,7 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-bold text-stone-900 text-base leading-tight">
+                <h3 id={titleId} className="font-bold text-stone-900 text-base leading-tight">
                   Share Project: {projectTitle}
                 </h3>
               </div>
@@ -284,6 +300,7 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
             onClick={onClose}
             className="p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-200/60 rounded-lg transition-colors cursor-pointer"
             title="Close"
+            aria-label="Close"
           >
             <X className="w-4 h-4" />
           </button>
@@ -297,7 +314,7 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
               <HardDrive className={`w-4 h-4 shrink-0 ${isConnected ? 'text-emerald-600' : 'text-stone-500'}`} />
               <div className="truncate">
                 <span className="font-medium text-stone-800 block text-xs truncate">
-                  {isConnected ? 'Google Drive Folder' : 'Local / Offline Mode'}
+                  {isConnected ? 'Google Drive Folder' : isMockMode ? 'Offline Mock Mode' : 'Google Drive not connected'}
                 </span>
                 <span className="text-[10px] text-stone-500 block truncate">
                   {isConnected
@@ -333,6 +350,7 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
                   rel="noopener noreferrer"
                   className="p-1 hover:bg-stone-200 text-stone-500 hover:text-stone-800 rounded transition-colors"
                   title="Open folder directly in Google Drive"
+                  aria-label="Open folder in Google Drive"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
@@ -345,12 +363,14 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
               <AlertCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
               <div className="flex-1 space-y-1">
                 <p className="font-medium leading-snug">
-                  Currently running in offline preview
+                  {isMockMode ? 'Offline mock mode: sharing is simulated locally' : 'Connect Google Drive to share'}
                 </p>
                 <p className="text-[11px] text-blue-800 leading-relaxed">
-                  You can simulate sharing below. When you connect your Google Drive, projects are shared directly via Google Drive’s native permissions, allowing other Google accounts to view and collaborate on your Markdown files in real time.
+                  {isMockMode
+                    ? 'Nothing added here is actually shared. In the real app, projects are shared via Google Drive’s native permissions.'
+                    : 'Projects are shared via Google Drive’s native permissions, allowing other Google accounts to view and collaborate on your Markdown files.'}
                 </p>
-                {onOpenConnectDrive && (
+                {onOpenConnectDrive && !isMockMode && (
                   <button
                     type="button"
                     onClick={() => {
@@ -390,7 +410,8 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
 
           {/* Add Collaborator Form */}
           <form onSubmit={handleShare} className="space-y-3 p-3.5 bg-stone-50 rounded-xl border border-stone-200">
-            <label className="block font-semibold text-stone-800 text-xs">
+            <fieldset disabled={!canShare} className="space-y-3 disabled:opacity-60">
+            <label htmlFor={`${titleId}-email`} className="block font-semibold text-stone-800 text-xs">
               Add Google Account
             </label>
 
@@ -398,6 +419,7 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
               <div className="relative flex-1">
                 <Mail className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400" />
                 <input
+                  id={`${titleId}-email`}
                   type="email"
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
@@ -410,7 +432,8 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
               <div className="flex items-center gap-2 shrink-0">
                 <select
                   value={roleInput}
-                  onChange={(e) => setRoleInput(e.target.value as any)}
+                  aria-label="Access role"
+                  onChange={(e) => setRoleInput(e.target.value as ShareRole)}
                   className="bg-white border border-stone-300 rounded-lg py-1.5 px-2 text-xs font-medium text-stone-800 focus:outline-hidden focus:border-blue-500 cursor-pointer"
                 >
                   <option value="writer">Editor (Can edit)</option>
@@ -420,7 +443,7 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
 
                 <button
                   type="submit"
-                  disabled={isSubmitting || !emailInput.trim()}
+                  disabled={!canShare || isSubmitting || !emailInput.trim()}
                   className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-xs shadow-xs transition-colors cursor-pointer disabled:opacity-50"
                 >
                   {isSubmitting ? (
@@ -442,6 +465,7 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
               />
               <span>Send notification email from Google Drive</span>
             </label>
+            </fieldset>
           </form>
 
           {/* People with Access */}
@@ -510,11 +534,13 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
 
                     <div className="flex items-center gap-2 shrink-0">
                       <select
-                        value={perm.role === 'writer' ? 'writer' : 'reader'}
-                        onChange={(e) => handleRoleChange(perm.id, e.target.value as any)}
+                        value={perm.role === 'writer' || perm.role === 'commenter' ? perm.role : 'reader'}
+                        onChange={(e) => handleRoleChange(perm.id, e.target.value as ShareRole)}
+                        aria-label={`Access role for ${perm.emailAddress || perm.displayName || 'collaborator'}`}
                         className="bg-stone-50 border border-stone-200 rounded px-1.5 py-1 text-[11px] font-medium text-stone-700 focus:outline-hidden focus:border-blue-400 cursor-pointer"
                       >
                         <option value="writer">Editor</option>
+                        <option value="commenter">Commenter</option>
                         <option value="reader">Viewer</option>
                       </select>
 
@@ -523,6 +549,7 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
                         onClick={() => handleRemoveCollaborator(perm.id, perm.emailAddress)}
                         className="p-1 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
                         title="Remove access"
+                        aria-label={`Remove access for ${perm.emailAddress || perm.displayName || 'collaborator'}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -533,7 +560,9 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
               {(!shareInfo?.permissions ||
                 shareInfo.permissions.filter((p) => p.role !== 'owner').length === 0) && (
                 <div className="p-4 text-center text-stone-400 text-xs italic">
-                  No other accounts have access yet. Add a colleague above to collaborate!
+                  {canShare
+                    ? 'No other accounts have access yet. Add a colleague above to collaborate!'
+                    : 'Connect Google Drive to see and manage who has access.'}
                 </div>
               )}
             </div>
@@ -554,7 +583,6 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
             Done
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

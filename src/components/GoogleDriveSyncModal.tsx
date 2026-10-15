@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import {
   X,
   HardDrive,
@@ -18,6 +18,7 @@ import { User } from 'firebase/auth';
 import { VaultFile } from '../types';
 import { syncAllFilesToDrive, importFilesFromDrive } from '../utils/googleDrive';
 import { testDriveConnection } from '../utils/googleAuth';
+import { Modal } from './Modal';
 
 interface GoogleDriveSyncModalProps {
   isOpen: boolean;
@@ -27,7 +28,8 @@ interface GoogleDriveSyncModalProps {
   onSignOut: () => Promise<void>;
   files: VaultFile[];
   onImportFilesFromDrive: (files: VaultFile[]) => void;
-  isDarkMode?: boolean;
+  /** Called after "Sync All" completes successfully so the parent can clear its unsaved-file state. */
+  onSyncedAll?: () => void;
 }
 
 export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
@@ -38,7 +40,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
   onSignOut,
   files,
   onImportFilesFromDrive,
-  isDarkMode = false,
+  onSyncedAll,
 }) => {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -47,6 +49,8 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; file: string } | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [confirmSyncOpen, setConfirmSyncOpen] = useState(false);
+  const titleId = useId();
+  const confirmTitleId = useId();
 
   if (!isOpen) return null;
 
@@ -100,6 +104,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
         type: 'success',
         text: `Successfully synced to Google Drive: ${result.uploaded} new file(s) created, ${result.updated} file(s) updated in /Markdown Life Vault.`,
       });
+      onSyncedAll?.();
     } catch (err: any) {
       setStatusMessage({ type: 'error', text: err?.message || 'Failed to sync files to Google Drive' });
     } finally {
@@ -133,24 +138,22 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-      <div
-        className={`rounded-2xl border shadow-2xl max-w-lg w-full overflow-hidden transition-colors ${
-          isDarkMode ? 'bg-stone-900 border-stone-800 text-stone-100' : 'bg-white border-stone-200 text-stone-900'
-        }`}
-      >
+    <>
+    <Modal
+      onClose={onClose}
+      labelledBy={titleId}
+      closeOnEscape={!confirmSyncOpen}
+      overlayClassName="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+      className="rounded-2xl border shadow-2xl max-w-lg w-full overflow-hidden transition-colors bg-white border-stone-200 text-stone-900"
+    >
         {/* Header */}
-        <div
-          className={`p-4 md:px-6 border-b flex items-center justify-between ${
-            isDarkMode ? 'bg-stone-950 border-stone-800' : 'bg-stone-50 border-stone-200'
-          }`}
-        >
+        <div className="p-4 md:px-6 border-b flex items-center justify-between bg-stone-50 border-stone-200">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
               <HardDrive className="w-5 h-5" />
             </div>
             <div>
-              <h3 className={`font-bold text-base ${isDarkMode ? 'text-stone-100' : 'text-stone-900'}`}>
+              <h3 id={titleId} className="font-bold text-base text-stone-900">
                 Google Drive Storage & Sync
               </h3>
               <p className="text-[11px] text-stone-400">Save and sync markdown files directly to your Drive</p>
@@ -159,11 +162,8 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className={`p-1.5 rounded-lg transition-colors ${
-              isDarkMode
-                ? 'text-stone-400 hover:text-stone-200 hover:bg-stone-800'
-                : 'text-stone-400 hover:text-stone-700 hover:bg-stone-200'
-            }`}
+            aria-label="Close"
+            className="p-1.5 rounded-lg transition-colors text-stone-400 hover:text-stone-700 hover:bg-stone-200"
           >
             <X className="w-5 h-5" />
           </button>
@@ -176,11 +176,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
             <div
               className={`p-3 rounded-xl border flex flex-col gap-2 ${
                 statusMessage.type === 'success'
-                  ? isDarkMode
-                    ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300'
-                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  : isDarkMode
-                  ? 'bg-red-950/60 border-red-800 text-red-300'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                   : 'bg-red-50 border-red-200 text-red-800'
               }`}
             >
@@ -193,15 +189,15 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                 <span className="leading-relaxed font-medium">{statusMessage.text}</span>
               </div>
               {statusMessage.text.includes('unauthorized-domain') && typeof window !== 'undefined' && (
-                <div className="text-[11px] pt-1.5 border-t border-red-200 dark:border-red-800/60 space-y-1">
+                <div className="text-[11px] pt-1.5 border-t border-red-200 space-y-1">
                   <div>
-                    Domain <code className="font-mono bg-red-100 dark:bg-red-900/60 px-1 py-0.5 rounded">{window.location.hostname}</code> must be authorized in Firebase.
+                    Domain <code className="font-mono bg-red-100 px-1 py-0.5 rounded">{window.location.hostname}</code> must be authorized in Firebase.
                   </div>
                   <a
                     href="https://console.firebase.google.com/project/gen-lang-client-0609175245/authentication/settings"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                    className="inline-flex items-center gap-1 text-blue-600 hover:underline font-semibold"
                   >
                     Open Firebase Console Settings &rarr; Authorized Domains
                     <ExternalLink className="w-3 h-3" />
@@ -212,8 +208,8 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                 statusMessage.text.toLowerCase().includes('expired') ||
                 statusMessage.text.toLowerCase().includes('not authenticated') ||
                 statusMessage.text.toLowerCase().includes('token')) && (
-                <div className="pt-2 border-t border-red-200 dark:border-red-800/60 flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-red-700 dark:text-red-300">
+                <div className="pt-2 border-t border-red-200 flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-red-700">
                     Google Drive session needs re-authentication to sync.
                   </span>
                   <button
@@ -267,11 +263,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
           ) : (
             <div className="space-y-4">
               {/* Account Card */}
-              <div
-                className={`p-3.5 rounded-xl border flex items-center justify-between ${
-                  isDarkMode ? 'bg-stone-950 border-stone-800' : 'bg-stone-50 border-stone-200'
-                }`}
-              >
+              <div className="p-3.5 rounded-xl border flex items-center justify-between bg-stone-50 border-stone-200">
                 <div className="flex items-center gap-3">
                   {user.photoURL ? (
                     <img
@@ -287,7 +279,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                   )}
                   <div>
                     <div className="flex items-center gap-1.5">
-                      <span className={`font-semibold ${isDarkMode ? 'text-stone-200' : 'text-stone-800'}`}>
+                      <span className="font-semibold text-stone-800">
                         {user.displayName || 'Google Account'}
                       </span>
                       <span className="px-1.5 py-0.2 rounded text-[10px] bg-emerald-100 text-emerald-800 font-medium">
@@ -304,11 +296,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                     onClick={handleTestConnection}
                     disabled={isTestingConnection}
                     title="Verify Google Drive API connection and token validity"
-                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
-                      isDarkMode
-                        ? 'bg-stone-900 border-stone-800 hover:bg-stone-800 text-stone-300'
-                        : 'bg-white border-stone-200 hover:bg-stone-50 text-stone-700'
-                    }`}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors bg-white border-stone-200 hover:bg-stone-50 text-stone-700"
                   >
                     <RefreshCw className={`w-3 h-3 ${isTestingConnection ? 'animate-spin text-blue-600' : 'text-stone-500'}`} />
                     <span>{isTestingConnection ? 'Testing...' : 'Test Connection'}</span>
@@ -318,11 +306,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                     type="button"
                     onClick={onSignOut}
                     title="Disconnect Google Account"
-                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${
-                      isDarkMode
-                        ? 'bg-stone-900 border-stone-800 hover:bg-stone-800 text-stone-400'
-                        : 'bg-white border-stone-200 hover:bg-stone-100 text-stone-600'
-                    }`}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs transition-colors bg-white border-stone-200 hover:bg-stone-100 text-stone-600"
                   >
                     <LogOut className="w-3 h-3" />
                     Sign Out
@@ -331,11 +315,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
               </div>
 
               {/* Target Location in Drive */}
-              <div
-                className={`p-3.5 rounded-xl border space-y-2 ${
-                  isDarkMode ? 'bg-stone-950/60 border-stone-800' : 'bg-blue-50/50 border-blue-100'
-                }`}
-              >
+              <div className="p-3.5 rounded-xl border space-y-2 bg-blue-50/50 border-blue-100">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold flex items-center gap-1.5 text-blue-600">
                     <FolderCheck className="w-4 h-4" />
@@ -343,7 +323,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                   </span>
                   <span className="font-mono text-[10px] text-stone-400">drive.google.com</span>
                 </div>
-                <div className="font-mono text-xs text-stone-700 dark:text-stone-300 bg-white/70 dark:bg-stone-900 p-2 rounded border border-stone-200 dark:border-stone-800">
+                <div className="font-mono text-xs text-stone-700 bg-white/70 p-2 rounded border border-stone-200">
                   📁 Google Drive / <strong>Markdown Life Vault</strong>
                   <div className="text-[10px] text-stone-400 ml-4 mt-0.5">
                     ├── 1. /goals/ (Goals)<br />
@@ -357,12 +337,12 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
 
               {/* Progress Bar (if syncing) */}
               {syncProgress && (
-                <div className="space-y-1 p-3 rounded-lg border border-blue-200 bg-blue-50/60 dark:bg-stone-950 dark:border-stone-800">
-                  <div className="flex justify-between text-[11px] text-blue-700 dark:text-blue-300 font-medium">
+                <div className="space-y-1 p-3 rounded-lg border border-blue-200 bg-blue-50/60">
+                  <div className="flex justify-between text-[11px] text-blue-700 font-medium">
                     <span>Syncing file: {syncProgress.file}</span>
                     <span>{syncProgress.current} / {syncProgress.total}</span>
                   </div>
-                  <div className="w-full h-1.5 bg-blue-200 dark:bg-stone-800 rounded-full overflow-hidden">
+                  <div className="w-full h-1.5 bg-blue-200 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-blue-600 transition-all duration-200"
                       style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }}
@@ -378,17 +358,13 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                   id="btn-sync-to-drive-trigger"
                   disabled={isSyncing || isImporting}
                   onClick={() => setConfirmSyncOpen(true)}
-                  className={`p-3 rounded-xl border text-left flex items-start gap-3 transition-all disabled:opacity-50 cursor-pointer ${
-                    isDarkMode
-                      ? 'bg-stone-950 border-stone-800 hover:border-amber-400 hover:bg-stone-900'
-                      : 'bg-white border-stone-200 hover:border-blue-500 hover:bg-blue-50/20'
-                  }`}
+                  className="p-3 rounded-xl border text-left flex items-start gap-3 transition-all disabled:opacity-50 cursor-pointer bg-white border-stone-200 hover:border-blue-500 hover:bg-blue-50/20"
                 >
                   <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
                     {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudUpload className="w-4 h-4" />}
                   </div>
                   <div>
-                    <div className="font-semibold text-stone-900 dark:text-stone-100">Sync All to Google Drive</div>
+                    <div className="font-semibold text-stone-900">Sync All to Google Drive</div>
                     <div className="text-[11px] text-stone-500">
                       Upload and update all {files.length} markdown files into Google Drive
                     </div>
@@ -400,17 +376,13 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                   id="btn-import-from-drive"
                   disabled={isSyncing || isImporting}
                   onClick={handleExecuteImportFromDrive}
-                  className={`p-3 rounded-xl border text-left flex items-start gap-3 transition-all disabled:opacity-50 cursor-pointer ${
-                    isDarkMode
-                      ? 'bg-stone-950 border-stone-800 hover:border-emerald-400 hover:bg-stone-900'
-                      : 'bg-white border-stone-200 hover:border-emerald-500 hover:bg-emerald-50/20'
-                  }`}
+                  className="p-3 rounded-xl border text-left flex items-start gap-3 transition-all disabled:opacity-50 cursor-pointer bg-white border-stone-200 hover:border-emerald-500 hover:bg-emerald-50/20"
                 >
                   <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
                     {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" />}
                   </div>
                   <div>
-                    <div className="font-semibold text-stone-900 dark:text-stone-100">Import from Google Drive</div>
+                    <div className="font-semibold text-stone-900">Import from Google Drive</div>
                     <div className="text-[11px] text-stone-500">
                       Pull all existing .md files from your Google Drive vault folder
                     </div>
@@ -422,11 +394,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div
-          className={`p-4 border-t flex items-center justify-between text-[11px] text-stone-500 ${
-            isDarkMode ? 'bg-stone-950 border-stone-800' : 'bg-stone-50 border-stone-200'
-          }`}
-        >
+        <div className="p-4 border-t flex items-center justify-between text-[11px] text-stone-500 bg-stone-50 border-stone-200">
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-blue-500"></span>
             Google Workspace Drive API v3
@@ -434,38 +402,34 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className={`px-3 py-1.5 border rounded-lg transition-colors ${
-              isDarkMode
-                ? 'bg-stone-900 border-stone-800 text-stone-300 hover:bg-stone-800'
-                : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-100'
-            }`}
+            className="px-3 py-1.5 border rounded-lg transition-colors bg-white border-stone-200 text-stone-700 hover:bg-stone-100"
           >
             Close
           </button>
         </div>
-      </div>
+    </Modal>
 
       {/* Explicit User Confirmation Dialog for Mutating Drive Data */}
       {confirmSyncOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-xs animate-in fade-in duration-100">
-          <div
-            className={`rounded-xl border shadow-xl max-w-md w-full p-5 space-y-4 ${
-              isDarkMode ? 'bg-stone-900 border-stone-800 text-stone-100' : 'bg-white border-stone-200 text-stone-900'
-            }`}
-          >
+        <Modal
+          onClose={() => setConfirmSyncOpen(false)}
+          labelledBy={confirmTitleId}
+          overlayClassName="fixed inset-0 z-60 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-xs animate-in fade-in duration-100"
+          className="rounded-xl border shadow-xl max-w-md w-full p-5 space-y-4 bg-white border-stone-200 text-stone-900"
+        >
             <div className="flex items-center gap-2.5 text-amber-500">
               <FolderSync className="w-5 h-5" />
-              <h4 className="font-bold text-sm text-stone-900 dark:text-stone-100">
+              <h4 id={confirmTitleId} className="font-bold text-sm text-stone-900">
                 Confirm Google Drive Synchronization
               </h4>
             </div>
 
-            <p className="text-xs text-stone-600 dark:text-stone-300 leading-relaxed">
+            <p className="text-xs text-stone-600 leading-relaxed">
               Are you sure you want to sync <strong>{files.length} markdown file(s)</strong> to your Google Drive?
               This will create or overwrite files in folder <strong>"Markdown Life Vault"</strong> on your Google account ({user?.email}).
             </p>
 
-            <div className="max-h-32 overflow-y-auto p-2 rounded bg-stone-100 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 text-[11px] font-mono space-y-0.5">
+            <div className="max-h-32 overflow-y-auto p-2 rounded bg-stone-100 border border-stone-200 text-[11px] font-mono space-y-0.5">
               {files.map((f) => (
                 <div key={f.id} className="truncate text-stone-500">
                   📁 {f.path}
@@ -477,11 +441,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
               <button
                 type="button"
                 onClick={() => setConfirmSyncOpen(false)}
-                className={`px-3 py-1.5 rounded-lg border text-xs ${
-                  isDarkMode
-                    ? 'border-stone-800 text-stone-400 hover:bg-stone-800'
-                    : 'border-stone-200 text-stone-600 hover:bg-stone-100'
-                }`}
+                className="px-3 py-1.5 rounded-lg border text-xs border-stone-200 text-stone-600 hover:bg-stone-100"
               >
                 Cancel
               </button>
@@ -494,9 +454,8 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                 Confirm & Sync Files
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
-    </div>
+    </>
   );
 };

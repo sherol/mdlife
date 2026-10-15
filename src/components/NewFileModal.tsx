@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import {
   X,
   Target,
@@ -11,6 +11,14 @@ import {
   Folder,
 } from 'lucide-react';
 import { FileCategory } from '../types';
+import { Modal } from './Modal';
+
+const slugify = (val: string) =>
+  val
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 
 interface NewFileModalProps {
   initialFolder?: string;
@@ -103,10 +111,16 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
   const [category, setCategory] = useState<FileCategory>(initState.cat);
   const [archiveYear, setArchiveYear] = useState<string>(initState.year);
   const [projectSubfolder, setProjectSubfolder] = useState<string>(initState.proj);
+  // Until the user edits the project sub-directory field (or one was preselected), it is derived from the title.
+  const [projectSubfolderTouched, setProjectSubfolderTouched] = useState<boolean>(!!initState.proj);
   const [isCustomFolder, setIsCustomFolder] = useState<boolean>(initState.isCustom);
   const [customFolderName, setCustomFolderName] = useState<string>(initState.custom);
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
+  const titleId = useId();
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  const effectiveProjectSubfolder = projectSubfolderTouched ? projectSubfolder : slugify(title);
 
   // Extract existing archive years and existing project folders from existingFolders
   const existingArchiveYears = Array.from(
@@ -119,7 +133,6 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
   );
   const currentYearStr = new Date().getFullYear().toString();
   if (!existingArchiveYears.includes(currentYearStr)) existingArchiveYears.push(currentYearStr);
-  if (!existingArchiveYears.includes('2025')) existingArchiveYears.push('2025');
   existingArchiveYears.sort((a, b) => b.localeCompare(a));
 
   const existingProjectFolders = Array.from(
@@ -134,17 +147,13 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
   const handleTitleChange = (val: string) => {
     setTitle(val);
     // Auto-generate clean markdown slug
-    const clean = val
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
+    const clean = slugify(val);
     setSlug(clean ? `${clean}.md` : '');
+  };
 
-    // If in project mode and projectSubfolder is empty, auto-suggest project subfolder
-    if (category === 'projects' && !projectSubfolder) {
-      setProjectSubfolder(clean);
-    }
+  const handleProjectSubfolderChange = (val: string) => {
+    setProjectSubfolderTouched(true);
+    setProjectSubfolder(val);
   };
 
   const computeFinalFolder = () => {
@@ -155,7 +164,7 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
       return 'goals';
     }
     if (category === 'projects') {
-      const cleanProject = projectSubfolder
+      const cleanProject = effectiveProjectSubfolder
         .toLowerCase()
         .trim()
         .replace(/[^a-z0-9_-]+/g, '-')
@@ -186,8 +195,13 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
   const finalFolderPreview = computeFinalFolder();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-lg w-full overflow-hidden">
+    <Modal
+      onClose={onClose}
+      labelledBy={titleId}
+      initialFocusRef={isCustomFolder ? undefined : titleInputRef}
+      overlayClassName="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+      className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-lg w-full overflow-hidden"
+    >
         {/* Modal Header */}
         <div className="p-4 px-6 border-b border-stone-200 flex items-center justify-between bg-stone-50">
           <div className="flex items-center gap-2.5">
@@ -195,7 +209,7 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
               +
             </div>
             <div>
-              <h3 className="font-bold text-stone-900 text-sm">Create Markdown File</h3>
+              <h3 id={titleId} className="font-bold text-stone-900 text-sm">Create Markdown File</h3>
               <p className="text-[11px] text-stone-500">
                 Organize under structured vault folders and sub-directories
               </p>
@@ -205,6 +219,7 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close"
             className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-200 transition-colors"
           >
             <X className="w-4 h-4" />
@@ -215,10 +230,10 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
           {/* Category Selector */}
           <div>
-            <label className="block text-stone-700 font-semibold mb-1.5">
+            <span id={`${titleId}-dest`} className="block text-stone-700 font-semibold mb-1.5">
               Vault Destination
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            </span>
+            <div role="group" aria-labelledby={`${titleId}-dest`} className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -348,7 +363,8 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
                     type="text"
                     value={archiveYear}
                     onChange={(e) => setArchiveYear(e.target.value.trim())}
-                    placeholder="e.g. 2025, 2024"
+                    aria-label="Archive year"
+                    placeholder={`e.g. ${currentYearStr}, ${Number(currentYearStr) - 1}`}
                     className="flex-1 p-2 bg-white border border-purple-300 rounded-lg text-xs font-mono text-stone-900 focus:outline-hidden focus:border-purple-500"
                   />
                   <div className="flex items-center gap-1">
@@ -382,8 +398,9 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
                 </div>
                 <input
                   type="text"
-                  value={projectSubfolder}
-                  onChange={(e) => setProjectSubfolder(e.target.value)}
+                  aria-label="Project sub-directory"
+                  value={effectiveProjectSubfolder}
+                  onChange={(e) => handleProjectSubfolderChange(e.target.value)}
                   placeholder="e.g. autonomous-research-agent, mobile-app"
                   className="w-full p-2 bg-white border border-blue-300 rounded-lg text-xs font-mono text-stone-900 focus:outline-hidden focus:border-blue-500"
                 />
@@ -394,9 +411,9 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
                       <button
                         key={p}
                         type="button"
-                        onClick={() => setProjectSubfolder(p)}
+                        onClick={() => handleProjectSubfolderChange(p)}
                         className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors truncate max-w-[140px] ${
-                          projectSubfolder === p
+                          effectiveProjectSubfolder === p
                             ? 'bg-blue-600 text-white'
                             : 'bg-white text-blue-800 border border-blue-200 hover:bg-blue-100'
                         }`}
@@ -411,10 +428,11 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
 
             {isCustomFolder && (
               <div className="mt-3 p-3 bg-stone-100 border border-stone-200 rounded-xl space-y-1.5">
-                <label className="block text-stone-800 font-semibold text-xs">
+                <label htmlFor={`${titleId}-custom`} className="block text-stone-800 font-semibold text-xs">
                   Custom Folder Path
                 </label>
                 <input
+                  id={`${titleId}-custom`}
                   type="text"
                   placeholder="e.g. routines, reading/2026"
                   value={customFolderName}
@@ -428,10 +446,11 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
 
           {/* Title */}
           <div>
-            <label className="block text-stone-700 font-semibold mb-1">
+            <label htmlFor="input-new-file-title" className="block text-stone-700 font-semibold mb-1">
               Title or Objective
             </label>
             <input
+              ref={titleInputRef}
               type="text"
               id="input-new-file-title"
               required
@@ -444,7 +463,7 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
 
           {/* Destination Path & Slug Preview */}
           <div>
-            <label className="block text-stone-700 font-semibold mb-1">
+            <label htmlFor={`${titleId}-filename`} className="block text-stone-700 font-semibold mb-1">
               Markdown Filename (.md)
             </label>
             <div className="flex items-center gap-1 text-stone-500 font-mono">
@@ -452,6 +471,7 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
                 /{finalFolderPreview}/
               </span>
               <input
+                id={`${titleId}-filename`}
                 type="text"
                 required
                 placeholder="filename.md"
@@ -484,7 +504,6 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 };
