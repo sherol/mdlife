@@ -23,6 +23,7 @@ import { User } from 'firebase/auth';
 import { VaultFile, ActiveTab, DriveConnectionStatus } from '../types';
 import { exportVaultAsZip } from '../utils/storage';
 import { getTaskProgress } from '../utils/markdownParser';
+import { SQUIRREL_FAVICON_DATA_URI } from '../utils/favicon';
 
 interface VaultHeaderProps {
   files: VaultFile[];
@@ -123,7 +124,7 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
             className="w-10 h-10 rounded-xl overflow-hidden shadow-xs border border-stone-800 bg-[#111827] flex items-center justify-center shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-500/50 transition-all p-0.5 group"
           >
             <img
-              src="/favicon.svg"
+              src={SQUIRREL_FAVICON_DATA_URI}
               alt="Squirrel .md Favicon"
               className="w-full h-full object-contain group-hover:scale-105 transition-transform"
             />
@@ -380,7 +381,7 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
             <div className="flex items-center justify-between pb-3 border-b border-stone-100">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-[#111827] p-1 flex items-center justify-center shadow-xs">
-                  <img src="/favicon.svg" alt="Favicon" className="w-full h-full object-contain" />
+                  <img src={SQUIRREL_FAVICON_DATA_URI} alt="Favicon" className="w-full h-full object-contain" />
                 </div>
                 <div>
                   <h3 className="font-bold text-sm text-stone-900">Vault Favicon & Squirrel Mascot</h3>
@@ -400,7 +401,7 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
             <div className="flex flex-col items-center justify-center p-6 bg-stone-100/70 rounded-2xl border border-stone-200/80">
               <div className="w-44 h-44 rounded-3xl overflow-hidden shadow-xl border-2 border-stone-800 bg-[#111827] p-2 flex items-center justify-center">
                 <img
-                  src="/favicon.svg"
+                  src={SQUIRREL_FAVICON_DATA_URI}
                   alt="High Resolution Squirrel Favicon"
                   className="w-full h-full object-contain"
                 />
@@ -422,7 +423,7 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
                 {/* 64px */}
                 <div className="flex flex-col items-center p-2.5 bg-stone-50 rounded-xl border border-stone-200 text-center">
                   <div className="w-16 h-16 rounded-xl overflow-hidden shadow-xs bg-[#111827] p-1 mb-1.5">
-                    <img src="/favicon.svg" alt="64px" className="w-full h-full object-contain" />
+                    <img src={SQUIRREL_FAVICON_DATA_URI} alt="64px" className="w-full h-full object-contain" />
                   </div>
                   <span className="text-[10px] font-bold text-stone-700">64 x 64</span>
                   <span className="text-[9px] text-stone-400">PWA / App</span>
@@ -430,7 +431,7 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
                 {/* 32px */}
                 <div className="flex flex-col items-center p-2.5 bg-stone-50 rounded-xl border border-stone-200 text-center">
                   <div className="w-8 h-8 rounded-lg overflow-hidden shadow-xs bg-[#111827] p-0.5 mb-1.5">
-                    <img src="/favicon.svg" alt="32px" className="w-full h-full object-contain" />
+                    <img src={SQUIRREL_FAVICON_DATA_URI} alt="32px" className="w-full h-full object-contain" />
                   </div>
                   <span className="text-[10px] font-bold text-stone-700">32 x 32</span>
                   <span className="text-[9px] text-stone-400">Retina Tab</span>
@@ -438,7 +439,7 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
                 {/* 24px */}
                 <div className="flex flex-col items-center p-2.5 bg-stone-50 rounded-xl border border-stone-200 text-center">
                   <div className="w-6 h-6 rounded-md overflow-hidden shadow-xs bg-[#111827] p-0.5 mb-1.5">
-                    <img src="/favicon.svg" alt="24px" className="w-full h-full object-contain" />
+                    <img src={SQUIRREL_FAVICON_DATA_URI} alt="24px" className="w-full h-full object-contain" />
                   </div>
                   <span className="text-[10px] font-bold text-stone-700">24 x 24</span>
                   <span className="text-[9px] text-stone-400">Toolbar</span>
@@ -446,7 +447,7 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
                 {/* 16px */}
                 <div className="flex flex-col items-center p-2.5 bg-stone-50 rounded-xl border border-stone-200 text-center">
                   <div className="w-4 h-4 rounded-xs overflow-hidden shadow-2xs bg-[#111827] mb-1.5">
-                    <img src="/favicon.svg" alt="16px" className="w-full h-full object-contain" />
+                    <img src={SQUIRREL_FAVICON_DATA_URI} alt="16px" className="w-full h-full object-contain" />
                   </div>
                   <span className="text-[10px] font-bold text-stone-700">16 x 16</span>
                   <span className="text-[9px] text-stone-400">Standard Tab</span>
@@ -472,7 +473,7 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
 
             <div className="flex items-center justify-between pt-2 border-t border-stone-100">
               <a
-                href="/favicon.svg"
+                href={SQUIRREL_FAVICON_DATA_URI}
                 download="favicon.svg"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-300 text-stone-700 hover:bg-stone-100 text-xs font-medium cursor-pointer"
               >
