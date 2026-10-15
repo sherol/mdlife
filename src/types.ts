@@ -23,6 +23,7 @@ export interface FileFrontmatter {
 export interface VaultFile {
   id: string; // unique path or uuid, e.g. "goals/ai-mastery.md"
   driveFileId?: string; // Direct Google Drive file ID for in-place updates without duplicating
+  driveModifiedTime?: string; // Drive modifiedTime (RFC 3339) last seen when fetched/saved; used for conflict detection
   name: string; // "ai-mastery.md"
   path: string; // "goals/ai-mastery.md"
   folder: string; // "goals"
@@ -38,7 +39,15 @@ export interface TaskProgress {
   percentage: number;
 }
 
-export type ActiveTab = 'editor' | 'matrix' | 'skills-hub' | 'graph';
+export type ActiveTab = 'editor' | 'matrix' | 'skills-hub';
 
 export type DriveConnectionStatus = 'connected' | 'checking' | 'expired' | 'disconnected';
 
+/** A Drive deletion that could not run yet (offline / expired / failed); retried on reconnect. */
+export interface PendingDriveDeletion {
+  id: string; // local file id at the time of deletion (folder/name)
+  folder: string;
+  name: string;
+  driveFileId?: string;
+  queuedAt: number;
+}

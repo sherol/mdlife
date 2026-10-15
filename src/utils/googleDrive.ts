@@ -1,39 +1,81 @@
 import { VaultFile } from '../types';
 import { getAccessToken, markTokenExpired } from './googleAuth';
 import { parseFrontmatter } from './markdownParser';
+import { isDriveSyncDisabled } from './storageKeys';
 
 const ROOT_FOLDER_NAME = 'Markdown Life Vault';
+const DRIVE_API = 'https://www.googleapis.com/drive/v3/';
+const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/';
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+const LIST_PAGE_SIZE = 1000;
 
-interface DriveFileItem {
-  id: string;
-  name: string;
-  mimeType?: string;
-  parents?: string[];
-  modifiedTime?: string;
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+/** Any non-2xx response from the Drive API. */
+export class DriveApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'DriveApiError';
+    this.status = status;
+  }
+}
+
+/** The Drive session is missing or expired (HTTP 401): the user must reconnect. */
+export class DriveAuthError extends DriveApiError {
+  constructor(message = 'Google Drive session expired. Please reconnect.') {
+    super(message, 401);
+    this.name = 'DriveAuthError';
+  }
+}
+
+/** The file changed in Drive since we last fetched/saved it; it was NOT overwritten. */
+export class DriveConflictError extends Error {
+  driveFileId: string;
+  remoteModifiedTime: string;
+  constructor(fileName: string, driveFileId: string, remoteModifiedTime: string) {
+    super(`"${fileName}" was changed in Google Drive since it was last synced.`);
+    this.name = 'DriveConflictError';
+    this.driveFileId = driveFileId;
+    this.remoteModifiedTime = remoteModifiedTime;
+  }
+}
+
+const isNotFound = (err: unknown) => err instanceof DriveApiError && err.status === 404;
+
+// ---------------------------------------------------------------------------
+// Low-level helpers
+// ---------------------------------------------------------------------------
+
+/** Escapes a value for use inside a single-quoted Drive query string literal. */
+export function escapeDriveQuery(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 /**
- * Helper to call Google Drive API with current in-memory token
+ * Calls the Google Drive API with the current in-memory token.
+ * Accepts a path relative to drive/v3/ or an absolute googleapis URL (for uploads).
+ * Throws DriveAuthError on 401 / missing token and DriveApiError on other failures.
  */
 async function driveFetch(endpoint: string, options: RequestInit = {}): Promise<Response> {
+  if (isDriveSyncDisabled()) {
+    throw new Error('Google Drive is disabled in offline mock mode.');
+  }
   const token = await getAccessToken();
   if (!token) {
-    throw new Error('You must be signed in with Google to access Google Drive.');
+    throw new DriveAuthError();
   }
 
   const headers = new Headers(options.headers || {});
   headers.set('Authorization', `Bearer ${token}`);
 
-  const res = await fetch(`https://www.googleapis.com/drive/v3/${endpoint}`, {
-    ...options,
-    headers,
-  });
+  const url = endpoint.startsWith('https://') ? endpoint : `${DRIVE_API}${endpoint}`;
+  const res = await fetch(url, { ...options, headers });
 
   if (!res.ok) {
-    if (res.status === 401) {
-      markTokenExpired('Google Drive session expired (401)');
-    }
-    const errText = await res.text();
+    const errText = await res.text().catch(() => '');
     let message = `Google Drive error (${res.status})`;
     try {
       const errJson = JSON.parse(errText);
@@ -43,69 +85,137 @@ async function driveFetch(endpoint: string, options: RequestInit = {}): Promise<
     } catch {
       // ignore
     }
-    throw new Error(message);
+    if (res.status === 401) {
+      markTokenExpired('Google Drive session expired (401)');
+      throw new DriveAuthError(message);
+    }
+    throw new DriveApiError(message, res.status);
   }
 
   return res;
 }
 
+/** Lists every file matching `q`, following nextPageToken until exhausted. */
+async function listAll<T = any>(q: string, fileFields: string): Promise<T[]> {
+  const items: T[] = [];
+  let pageToken: string | undefined;
+  do {
+    let url =
+      `files?q=${encodeURIComponent(q)}` +
+      `&fields=${encodeURIComponent(`nextPageToken,files(${fileFields})`)}` +
+      `&pageSize=${LIST_PAGE_SIZE}`;
+    if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+    const res = await driveFetch(url);
+    const data = await res.json();
+    if (Array.isArray(data.files)) items.push(...data.files);
+    pageToken = data.nextPageToken || undefined;
+  } while (pageToken);
+  return items;
+}
+
+/**
+ * Serializes Drive operations per key (local file id), so two saves of the same file never
+ * run concurrently — which is what used to create duplicates via search-then-create.
+ */
+const fileLocks = new Map<string, Promise<unknown>>();
+export function withDriveFileLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = fileLocks.get(key) || Promise.resolve();
+  const run = prev.catch(() => undefined).then(fn);
+  const tail = run.catch(() => undefined);
+  fileLocks.set(key, tail);
+  tail.then(() => {
+    if (fileLocks.get(key) === tail) fileLocks.delete(key);
+  });
+  return run;
+}
+
+// ---------------------------------------------------------------------------
+// Folders (with in-memory ID cache)
+// ---------------------------------------------------------------------------
+
+// key: `${parentId}/${lowercased folder name}` -> folder id (promise, so concurrent callers share one lookup/create)
+const folderIdCache = new Map<string, Promise<string>>();
+let rootIdPromise: Promise<string> | null = null;
+
+/** Drops cached folder IDs (on sign-out, reload, or when a cached folder disappears). */
+export function resetDriveCaches(): void {
+  folderIdCache.clear();
+  rootIdPromise = null;
+}
+
+function folderNameMatches(targetName: string, candidateName: string): boolean {
+  const targetLower = targetName.toLowerCase().trim();
+  const nameLower = (candidateName || '').toLowerCase().trim();
+  if (nameLower === targetLower) return true;
+  // Check standard category aliases
+  if (targetLower === 'skills' && (nameLower === 'agent skills' || nameLower === 'agent-skills' || nameLower === '3. agent skills' || nameLower === '3. skills')) return true;
+  if (targetLower === 'goals' && nameLower === '1. goals') return true;
+  if (targetLower === 'projects' && nameLower === '2. projects') return true;
+  if (targetLower === 'notes' && nameLower === '4. notes') return true;
+  if (targetLower === 'archive' && nameLower === '5. archive') return true;
+  if (targetLower === ROOT_FOLDER_NAME.toLowerCase() && nameLower.includes('markdown life')) return true;
+  return false;
+}
+
+const folderCacheKey = (folderName: string, parentId?: string) =>
+  `${parentId || 'root'}/${folderName.toLowerCase().trim()}`;
+
+/** Finds a child folder (exact, case-insensitive or alias match). Search errors propagate. */
+async function findChildFolder(folderName: string, parentId?: string): Promise<string | null> {
+  const parentQuery = `'${escapeDriveQuery(parentId || 'root')}' in parents`;
+  const q = `mimeType = '${FOLDER_MIME}' and ${parentQuery} and trashed = false`;
+  const folders = await listAll<{ id: string; name: string }>(q, 'id,name');
+  const match = folders.find((f) => folderNameMatches(folderName, f.name));
+  return match ? match.id : null;
+}
+
 /**
  * Finds or creates a folder inside a parent folder (or root if parentId is null),
  * checking for case-insensitive matches and common folder aliases first.
+ * If the search itself fails, the error is rethrown (never create blindly).
  */
-export async function getOrCreateFolder(
-  folderName: string,
-  parentId?: string
-): Promise<string> {
-  const parentQuery = parentId
-    ? `'${parentId}' in parents`
-    : `'root' in parents`;
+export function getOrCreateFolder(folderName: string, parentId?: string): Promise<string> {
+  const key = folderCacheKey(folderName, parentId);
+  const cached = folderIdCache.get(key);
+  if (cached) return cached;
 
-  // First, search all folders in parent to find exact or case-insensitive/alias matches
-  try {
-    const qAll = `mimeType = 'application/vnd.google-apps.folder' and ${parentQuery} and trashed = false`;
-    const searchRes = await driveFetch(`files?q=${encodeURIComponent(qAll)}&fields=files(id,name)`);
-    const data = await searchRes.json();
+  const promise = (async () => {
+    const existing = await findChildFolder(folderName, parentId);
+    if (existing) return existing;
 
-    if (data.files && Array.isArray(data.files) && data.files.length > 0) {
-      const targetLower = folderName.toLowerCase().trim();
-      const match = data.files.find((f: any) => {
-        const nameLower = (f.name || '').toLowerCase().trim();
-        if (nameLower === targetLower) return true;
-        // Check standard category aliases
-        if (targetLower === 'skills' && (nameLower === 'skills' || nameLower === 'agent skills' || nameLower === 'agent-skills' || nameLower === '3. agent skills' || nameLower === '3. skills')) return true;
-        if (targetLower === 'goals' && (nameLower === 'goals' || nameLower === '1. goals')) return true;
-        if (targetLower === 'projects' && (nameLower === 'projects' || nameLower === '2. projects')) return true;
-        if (targetLower === 'notes' && (nameLower === 'notes' || nameLower === '4. notes')) return true;
-        if (targetLower === 'archive' && (nameLower === 'archive' || nameLower === '5. archive')) return true;
-        if (targetLower === ROOT_FOLDER_NAME.toLowerCase() && nameLower.includes('markdown life')) return true;
-        return false;
-      });
-
-      if (match) {
-        return match.id;
-      }
+    const createPayload: Record<string, any> = {
+      name: folderName,
+      mimeType: FOLDER_MIME,
+    };
+    if (parentId) {
+      createPayload.parents = [parentId];
     }
-  } catch (err) {
-    console.warn(`Error searching folders in parent ${parentId}:`, err);
-  }
+    const createRes = await driveFetch('files?fields=id', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(createPayload),
+    });
+    const created = await createRes.json();
+    return created.id as string;
+  })();
 
-  // Create folder if not found
-  const createPayload: Record<string, any> = {
-    name: folderName,
-    mimeType: 'application/vnd.google-apps.folder',
-  };
-  if (parentId) {
-    createPayload.parents = [parentId];
-  }
-
-  const createRes = await driveFetch('files', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(createPayload),
+  folderIdCache.set(key, promise);
+  promise.catch(() => {
+    if (folderIdCache.get(key) === promise) folderIdCache.delete(key);
   });
-  const created = await createRes.json();
-  return created.id;
+  return promise;
+}
+
+/** Returns the (cached) ID of the root 'Markdown Life Vault' folder, creating it if needed. */
+export function getVaultRootId(): Promise<string> {
+  if (!rootIdPromise) {
+    const promise = getOrCreateFolder(ROOT_FOLDER_NAME);
+    rootIdPromise = promise;
+    promise.catch(() => {
+      if (rootIdPromise === promise) rootIdPromise = null;
+    });
+  }
+  return rootIdPromise;
 }
 
 /**
@@ -115,18 +225,22 @@ export async function getVaultFolderHierarchy(): Promise<{
   rootId: string;
   folderMap: Record<string, string>;
 }> {
-  const rootId = await getOrCreateFolder(ROOT_FOLDER_NAME);
+  const rootId = await getVaultRootId();
 
   const subfolders = ['goals', 'projects', 'skills', 'notes', 'archive'];
   const folderMap: Record<string, string> = {};
 
   for (const sf of subfolders) {
-    const id = await getOrCreateFolder(sf, rootId);
-    folderMap[sf] = id;
+    folderMap[sf] = await getOrCreateFolder(sf, rootId);
   }
 
   return { rootId, folderMap };
 }
+
+const splitFolderPath = (folderPath: string) =>
+  folderPath && folderPath !== '.' && folderPath !== '/'
+    ? folderPath.split('/').map((s) => s.trim()).filter(Boolean)
+    : [];
 
 /**
  * Resolves or creates a nested sub-directory path inside Google Drive (e.g. "goals/2026" or "projects/ai-agent")
@@ -135,260 +249,302 @@ export async function resolveDriveFolderId(
   folderPath: string,
   rootId: string
 ): Promise<string> {
-  if (!folderPath || folderPath === '.' || folderPath === '/') return rootId;
-  const parts = folderPath.split('/').map((s) => s.trim()).filter(Boolean);
   let currentParentId = rootId;
-  for (const part of parts) {
+  for (const part of splitFolderPath(folderPath)) {
     currentParentId = await getOrCreateFolder(part, currentParentId);
   }
   return currentParentId;
 }
 
-/**
- * Saves or updates a single markdown file in Google Drive
- */
-export async function saveFileToDrive(
-  file: VaultFile,
-  targetFolderId?: string
-): Promise<{ fileId: string; isNew: boolean }> {
-  const token = await getAccessToken();
-  if (!token) throw new Error('Not authenticated with Google');
-
-  // 1. If file already has a known Google Drive file ID, update it directly in place!
-  if (file.driveFileId) {
-    try {
-      const uploadRes = await fetch(
-        `https://www.googleapis.com/upload/drive/v3/files/${file.driveFileId}?uploadType=media`,
-        {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'text/markdown; charset=utf-8',
-          },
-          body: file.content,
-        }
-      );
-      if (uploadRes.ok) {
-        return { fileId: file.driveFileId, isNew: false };
-      }
-      if (uploadRes.status === 401) {
-        markTokenExpired('Google Drive session expired (401)');
-        throw new Error('Google Drive session expired (401)');
-      }
-      // If 404 (file removed from Drive) or other error, fall through to folder search
-    } catch (err: any) {
-      if (err?.message?.includes('401') || err?.message?.includes('expired')) {
-        throw err;
-      }
-      console.warn(`Direct update by driveFileId failed, falling back to folder search:`, err);
-    }
+/** Resolves a vault folder path WITHOUT creating anything; null if any segment is missing. */
+async function findVaultFolderId(folderPath: string): Promise<string | null> {
+  const rootId = await getVaultRootId();
+  let currentParentId = rootId;
+  for (const part of splitFolderPath(folderPath)) {
+    const key = folderCacheKey(part, currentParentId);
+    const cached = folderIdCache.get(key);
+    const nextId = cached ? await cached : await findChildFolder(part, currentParentId);
+    if (!nextId) return null;
+    if (!cached) folderIdCache.set(key, Promise.resolve(nextId));
+    currentParentId = nextId;
   }
+  return currentParentId;
+}
 
-  // 2. Resolve destination folder ID safely using resolveDriveFolderId
-  let resolvedFolderId = targetFolderId;
-  if (!resolvedFolderId) {
-    const { rootId } = await getVaultFolderHierarchy();
-    resolvedFolderId = await resolveDriveFolderId(file.folder, rootId);
-  }
+/** Lists non-trashed files in `folderId` whose name is exactly `<base>.md` or `<base>`. */
+async function findFilesByExactName(folderId: string, fileName: string) {
+  const baseName = fileName.replace(/\.md$/i, '');
+  const q =
+    `'${escapeDriveQuery(folderId)}' in parents and trashed = false and ` +
+    `mimeType != '${FOLDER_MIME}' and ` +
+    `(name = '${escapeDriveQuery(`${baseName}.md`)}' or name = '${escapeDriveQuery(baseName)}')`;
+  return listAll<{ id: string; name: string; modifiedTime?: string }>(q, 'id,name,modifiedTime');
+}
 
-  // Check if file already exists in this folder (prevent duplicate creation)
-  const baseName = file.name.replace(/\.md$/i, '');
-  const fileName = `${baseName}.md`;
-  const safeClean = fileName.replace(/'/g, "\\'");
-  const safeBase = baseName.replace(/'/g, "\\'");
-  const q = `'${resolvedFolderId}' in parents and trashed = false and (name = '${safeClean}' or name = '${safeBase}')`;
-  const searchRes = await driveFetch(`files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
-  const data = await searchRes.json();
+// ---------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------
 
-  if (data.files && data.files.length > 0) {
-    const existingId = data.files[0].id;
-    // Update existing file content via upload API
-    const uploadRes = await fetch(
-      `https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media`,
-      {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'text/markdown; charset=utf-8',
-        },
-        body: file.content,
-      }
-    );
-    if (!uploadRes.ok) {
-      if (uploadRes.status === 401) {
-        markTokenExpired('Google Drive session expired (401)');
-      }
-      throw new Error(`Failed to update ${file.name} in Google Drive (${uploadRes.status})`);
-    }
-    return { fileId: existingId, isNew: false };
-  } else {
-    // Only create a new file if it does not already exist
-    const createRes = await driveFetch('files', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: fileName,
-        parents: [resolvedFolderId],
-        mimeType: 'text/markdown',
-      }),
-    });
-    const created = await createRes.json();
-    const newId = created.id;
+export interface DriveSaveResult {
+  fileId: string;
+  isNew: boolean;
+  modifiedTime?: string;
+}
 
-    // Upload content
-    const uploadRes = await fetch(
-      `https://www.googleapis.com/upload/drive/v3/files/${newId}?uploadType=media`,
-      {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'text/markdown; charset=utf-8',
-        },
-        body: file.content,
-      }
-    );
-    if (!uploadRes.ok) {
-      if (uploadRes.status === 401) {
-        markTokenExpired('Google Drive session expired (401)');
-      }
-      throw new Error(`Failed to upload content for ${file.name} to Google Drive (${uploadRes.status})`);
-    }
-    return { fileId: newId, isNew: true };
+const isRemoteNewer = (remote?: string, known?: string) =>
+  !!remote && !!known && Date.parse(remote) > Date.parse(known);
+
+async function getFileMetadata(
+  fileId: string
+): Promise<{ id: string; modifiedTime?: string; trashed?: boolean } | null> {
+  try {
+    const res = await driveFetch(`files/${encodeURIComponent(fileId)}?fields=id,modifiedTime,trashed`);
+    return await res.json();
+  } catch (err) {
+    if (isNotFound(err)) return null;
+    throw err;
   }
 }
 
+/** Replaces a Drive file's content. */
+async function uploadContent(fileId: string, content: string): Promise<{ modifiedTime?: string }> {
+  const res = await driveFetch(
+    `${UPLOAD_API}files/${encodeURIComponent(fileId)}?uploadType=media&fields=id,modifiedTime`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
+      body: content,
+    }
+  );
+  return res.json();
+}
+
+/** Creates a markdown file with content in a single multipart request (no empty orphans on failure). */
+async function createFileWithContent(
+  fileName: string,
+  parentId: string,
+  content: string
+): Promise<{ id: string; modifiedTime?: string }> {
+  const boundary = `mdlife-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const metadata = { name: fileName, parents: [parentId], mimeType: 'text/markdown' };
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\nContent-Type: text/markdown; charset=UTF-8\r\n\r\n${content}\r\n` +
+    `--${boundary}--`;
+  const res = await driveFetch(`${UPLOAD_API}files?uploadType=multipart&fields=id,modifiedTime`, {
+    method: 'POST',
+    headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body,
+  });
+  return res.json();
+}
+
+/** Downloads a Drive file's current content and modifiedTime. */
+export async function downloadDriveFile(fileId: string): Promise<{ content: string; modifiedTime?: string }> {
+  const meta = await getFileMetadata(fileId);
+  const res = await driveFetch(`files/${encodeURIComponent(fileId)}?alt=media`);
+  return { content: await res.text(), modifiedTime: meta?.modifiedTime };
+}
+
 /**
- * Deletes a file and all matching copies from Google Drive
+ * Saves or updates a single markdown file in Google Drive.
+ *
+ * - With a known driveFileId: checks the remote modifiedTime first and throws DriveConflictError
+ *   (without writing) if Drive has a newer version than the one we last saw.
+ * - Otherwise: resolves the folder (cached) and updates an exact-name match or creates the file.
+ * Saves of the same local file are serialized.
  */
-export async function deleteFileFromDrive(
+export function saveFileToDrive(file: VaultFile, targetFolderId?: string): Promise<DriveSaveResult> {
+  return withDriveFileLock(file.id, async () => {
+    if (file.driveFileId) {
+      const meta = await getFileMetadata(file.driveFileId);
+      if (meta && !meta.trashed) {
+        if (isRemoteNewer(meta.modifiedTime, file.driveModifiedTime)) {
+          throw new DriveConflictError(file.name, file.driveFileId, meta.modifiedTime!);
+        }
+        const updated = await uploadContent(file.driveFileId, file.content);
+        return { fileId: file.driveFileId, isNew: false, modifiedTime: updated.modifiedTime };
+      }
+      // File was deleted/trashed in Drive: fall through and recreate it in its folder.
+    }
+
+    const resolvedFolderId =
+      targetFolderId || (await resolveDriveFolderId(file.folder, await getVaultRootId()));
+
+    const baseName = file.name.replace(/\.md$/i, '');
+    const fileName = `${baseName}.md`;
+    const existing = await findFilesByExactName(resolvedFolderId, fileName);
+
+    if (existing.length > 0) {
+      const existingId = existing[0].id;
+      const updated = await uploadContent(existingId, file.content);
+      return { fileId: existingId, isNew: false, modifiedTime: updated.modifiedTime };
+    }
+
+    try {
+      const created = await createFileWithContent(fileName, resolvedFolderId, file.content);
+      return { fileId: created.id, isNew: true, modifiedTime: created.modifiedTime };
+    } catch (err) {
+      // A cached folder ID may point at a folder deleted in Drive: drop the cache so a retry re-resolves.
+      if (isNotFound(err)) resetDriveCaches();
+      throw err;
+    }
+  });
+}
+
+/**
+ * Deletes exactly one vault file from Google Drive: by driveFileId when known, otherwise by
+ * exact name within its own vault folder (never searches the rest of Drive, never creates folders).
+ * Returns true when the file is gone from Drive. Throws on failure so callers can retry later.
+ */
+export function deleteFileFromDrive(
   folderName: string,
   fileName: string,
   driveFileId?: string
 ): Promise<boolean> {
-  let anyDeleted = false;
-  if (driveFileId) {
-    try {
-      await driveFetch(`files/${driveFileId}`, { method: 'DELETE' });
-      anyDeleted = true;
-    } catch (err) {
-      console.warn(`Direct delete by driveFileId failed, searching by query:`, err);
+  const cleanName = `${fileName.replace(/\.md$/i, '')}.md`;
+  return withDriveFileLock(`${folderName}/${cleanName}`, async () => {
+    if (driveFileId) {
+      try {
+        await driveFetch(`files/${encodeURIComponent(driveFileId)}`, { method: 'DELETE' });
+      } catch (err) {
+        if (!isNotFound(err)) throw err;
+        // Already gone from Drive.
+      }
+      return true;
     }
-  }
 
-  const baseName = fileName.replace(/\.md$/i, '');
-  const cleanName = `${baseName}.md`;
-  const safeClean = cleanName.replace(/'/g, "\\'");
-  const safeBase = baseName.replace(/'/g, "\\'");
-  const safeCopy = `${safeBase}-copy.md`.replace(/'/g, "\\'");
+    const folderId = await findVaultFolderId(folderName);
+    if (!folderId) return true;
 
-  try {
-    const { rootId } = await getVaultFolderHierarchy();
-    const folderId = await resolveDriveFolderId(folderName, rootId);
-    const q = `(name = '${safeClean}' or name = '${safeBase}' or name = '${safeCopy}' or name contains '${safeBase}-copy') and '${folderId}' in parents and trashed = false`;
-    const searchRes = await driveFetch(`files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
-    const data = await searchRes.json();
-
-    if (data.files && Array.isArray(data.files) && data.files.length > 0) {
-      for (const item of data.files) {
-        try {
-          await driveFetch(`files/${item.id}`, { method: 'DELETE' });
-          anyDeleted = true;
-        } catch (delErr) {
-          console.warn(`Failed to delete Drive file copy ${item.id}:`, delErr);
-        }
+    const matches = await findFilesByExactName(folderId, cleanName);
+    for (const item of matches) {
+      try {
+        await driveFetch(`files/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
+      } catch (err) {
+        if (!isNotFound(err)) throw err;
       }
     }
-
-    // Also search across the whole vault to remove any stray copies or duplicate versions
-    const qGlobal = `(name = '${safeClean}' or name = '${safeBase}' or name = '${safeCopy}' or name contains '${safeBase}-copy') and trashed = false`;
-    const resGlobal = await driveFetch(`files?q=${encodeURIComponent(qGlobal)}&fields=files(id,name)`);
-    const dataGlobal = await resGlobal.json();
-    if (dataGlobal.files && Array.isArray(dataGlobal.files)) {
-      for (const item of dataGlobal.files) {
-        try {
-          await driveFetch(`files/${item.id}`, { method: 'DELETE' });
-          anyDeleted = true;
-        } catch (delErr) {
-          console.warn(`Failed to delete Drive file copy ${item.id}:`, delErr);
-        }
-      }
-    }
-  } catch (err) {
-    console.warn(`Query-based file delete error in Drive:`, err);
-  }
-
-  return anyDeleted;
+    return true;
+  });
 }
 
 /**
- * Renames a file in Google Drive
+ * Renames a file in Google Drive (by driveFileId, else exact name in its folder).
+ * Returns renamed=false when no matching Drive file exists.
  */
-export async function renameFileInDrive(
+export function renameFileInDrive(
   folderName: string,
   oldFileName: string,
   newFileName: string,
   driveFileId?: string
-): Promise<boolean> {
+): Promise<{ renamed: boolean; fileId?: string; modifiedTime?: string }> {
   const cleanNewName = newFileName.endsWith('.md') ? newFileName : `${newFileName}.md`;
-  if (driveFileId) {
-    try {
-      await driveFetch(`files/${driveFileId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: cleanNewName }),
-      });
-      return true;
-    } catch {
-      // Fall through
-    }
-  }
-  const { rootId } = await getVaultFolderHierarchy();
-  const folderId = await resolveDriveFolderId(folderName, rootId);
-  const baseOld = oldFileName.replace(/\.md$/i, '');
-  const cleanOldName = `${baseOld}.md`;
+  const cleanOldName = `${oldFileName.replace(/\.md$/i, '')}.md`;
 
-  const q = `(name = '${cleanOldName}' or name = '${baseOld}') and '${folderId}' in parents and trashed = false`;
-  const searchRes = await driveFetch(`files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
-  const data = await searchRes.json();
-
-  if (data.files && data.files.length > 0) {
-    const fileId = data.files[0].id;
-    await driveFetch(`files/${fileId}`, {
+  const patchName = async (fileId: string) => {
+    const res = await driveFetch(`files/${encodeURIComponent(fileId)}?fields=id,modifiedTime`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: cleanNewName }),
     });
-    return true;
-  }
-  return false;
+    const data = await res.json();
+    return { renamed: true, fileId, modifiedTime: data.modifiedTime as string | undefined };
+  };
+
+  return withDriveFileLock(`${folderName}/${cleanOldName}`, async () => {
+    if (driveFileId) {
+      try {
+        return await patchName(driveFileId);
+      } catch (err) {
+        if (!isNotFound(err)) throw err;
+        // Fall through to a name lookup in the file's folder.
+      }
+    }
+
+    const folderId = await findVaultFolderId(folderName);
+    if (!folderId) return { renamed: false };
+    const matches = await findFilesByExactName(folderId, cleanOldName);
+    if (matches.length === 0) return { renamed: false };
+    return patchName(matches[0].id);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Bulk sync
+// ---------------------------------------------------------------------------
+
+export interface DriveSaveEvent {
+  localId: string;
+  content: string;
+  driveFileId: string;
+  modifiedTime?: string;
+}
+
+type DriveSaveListener = (event: DriveSaveEvent) => void;
+const saveListeners = new Set<DriveSaveListener>();
+
+/**
+ * Subscribes to saves performed by bulk sync (syncAllFilesToDrive), so the app can record the
+ * returned driveFileId/modifiedTime and clear unsaved flags even when a component triggered it.
+ */
+export function subscribeDriveSaves(listener: DriveSaveListener): () => void {
+  saveListeners.add(listener);
+  return () => {
+    saveListeners.delete(listener);
+  };
 }
 
 /**
- * Saves all files from the vault into their matching Google Drive folders
+ * Saves all files from the vault into their matching Google Drive folders.
+ * Files that changed in Drive since last sync are skipped (counted in `conflicts`), never overwritten.
  */
 export async function syncAllFilesToDrive(
   files: VaultFile[],
   onProgress?: (current: number, total: number, fileName: string) => void
-): Promise<{ uploaded: number; updated: number }> {
+): Promise<{ uploaded: number; updated: number; conflicts: number }> {
   const { rootId } = await getVaultFolderHierarchy();
 
   let uploaded = 0;
   let updated = 0;
+  let conflicts = 0;
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     onProgress?.(i + 1, files.length, file.name);
 
     const folderId = await resolveDriveFolderId(file.folder, rootId);
-    const result = await saveFileToDrive(file, folderId);
+    let result: DriveSaveResult;
+    try {
+      result = await saveFileToDrive(file, folderId);
+    } catch (err) {
+      if (err instanceof DriveConflictError) {
+        conflicts++;
+        continue;
+      }
+      throw err;
+    }
     if (result.isNew) {
       uploaded++;
     } else {
       updated++;
     }
+    const event: DriveSaveEvent = {
+      localId: file.id,
+      content: file.content,
+      driveFileId: result.fileId,
+      modifiedTime: result.modifiedTime,
+    };
+    saveListeners.forEach((fn) => {
+      try {
+        fn(event);
+      } catch (listenerErr) {
+        console.error('Error in Drive save listener:', listenerErr);
+      }
+    });
   }
 
-  return { uploaded, updated };
+  return { uploaded, updated, conflicts };
 }
 
 // Helper for concurrent batch execution with concurrency limit
@@ -408,259 +564,172 @@ async function mapConcurrent<T, R>(
   return results;
 }
 
+// ---------------------------------------------------------------------------
+// Import
+// ---------------------------------------------------------------------------
+
 export interface ImportDriveOptions {
-  includeGlobalSearch?: boolean;
   onProgress?: (message: string) => void;
 }
 
+export interface DriveVaultSnapshot {
+  files: VaultFile[];
+  /** Local ids (paths) whose content could not be downloaded; callers must keep their local copy. */
+  failedPaths: Set<string>;
+}
+
+function normalizeTopLevelFolder(name: string): string {
+  const nameLower = name.toLowerCase().trim();
+  if (
+    nameLower === 'skills' ||
+    nameLower === 'agent skills' ||
+    nameLower === 'agent-skills' ||
+    nameLower.includes('agent skill') ||
+    nameLower.endsWith('skills')
+  ) {
+    return 'skills';
+  }
+  if (nameLower.includes('goal')) return 'goals';
+  if (nameLower.includes('project')) return 'projects';
+  if (nameLower.includes('note')) return 'notes';
+  if (nameLower.includes('archive')) return 'archive';
+  return name;
+}
+
 /**
- * Imports markdown files from the Google Drive 'Markdown Life Vault' folder, including nested sub-directories.
- * Uses concurrent parallel downloads and skips redundant global queries for instant loading.
+ * Reads every markdown file in the Drive 'Markdown Life Vault' folder tree (paginated).
+ * Folder listing errors abort the import (so a partial listing is never mistaken for deletions);
+ * individual download failures are reported in `failedPaths`.
  */
-export async function importFilesFromDrive(options: ImportDriveOptions = {}): Promise<VaultFile[]> {
-  const { includeGlobalSearch = false, onProgress } = options;
-  const rootId = await getOrCreateFolder(ROOT_FOLDER_NAME);
+export async function importVaultFromDrive(options: ImportDriveOptions = {}): Promise<DriveVaultSnapshot> {
+  const { onProgress } = options;
+  const rootId = await getVaultRootId();
   const importedFiles: VaultFile[] = [];
   const processedPaths = new Set<string>();
+  const failedPaths = new Set<string>();
 
   onProgress?.('Scanning vault directories in Google Drive...');
 
   async function scanDirectory(folderId: string, relativePath: string) {
     const isSkillsFolder = relativePath.toLowerCase().includes('skill');
+    const parentQuery = `'${escapeDriveQuery(folderId)}' in parents and trashed = false`;
 
     // 1. Scan files in this directory
-    const qFiles = `'${folderId}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'`;
+    const items = await listAll<{ id: string; name: string; modifiedTime?: string; mimeType?: string }>(
+      `${parentQuery} and mimeType != '${FOLDER_MIME}'`,
+      'id,name,modifiedTime,mimeType'
+    );
 
-    try {
-      const resFiles = await driveFetch(
-        `files?q=${encodeURIComponent(qFiles)}&fields=files(id,name,modifiedTime,mimeType)`
-      );
-      const dataFiles = await resFiles.json();
-
-      if (dataFiles.files && Array.isArray(dataFiles.files) && dataFiles.files.length > 0) {
-        // Filter eligible files
-        const eligibleItems = dataFiles.files.filter((item: any) => {
-          if (item.mimeType?.startsWith('application/vnd.google-apps.')) return false;
-          if (!isSkillsFolder) {
-            const hasTextExt =
-              item.name.endsWith('.md') ||
-              item.name.endsWith('.markdown') ||
-              item.name.endsWith('.txt');
-            const isTextMime =
-              item.mimeType === 'text/markdown' ||
-              item.mimeType === 'text/plain' ||
-              item.mimeType === 'application/octet-stream';
-            if (!hasTextExt && !isTextMime) return false;
-          }
-          return true;
-        });
-
-        // Concurrently fetch file contents in batches of 10 for faster sign-in
-        await mapConcurrent(eligibleItems, 10, async (item: any) => {
-          try {
-            const cleanName = item.name.endsWith('.md') ? item.name : `${item.name}.md`;
-            const currentFolder = relativePath || (isSkillsFolder ? 'skills' : 'notes');
-            const filePath = `${currentFolder}/${cleanName}`;
-
-            if (processedPaths.has(filePath)) return null;
-            processedPaths.add(filePath);
-
-            const contentRes = await driveFetch(`files/${item.id}?alt=media`);
-            const text = await contentRes.text();
-            const parsed = parseFrontmatter(text);
-
-            let title = parsed.frontmatter.title;
-            if (!title || title.toUpperCase() === 'SKILL' || title.toLowerCase() === 'untitled') {
-              if (currentFolder.startsWith('skills/') && currentFolder.split('/').length > 1) {
-                const subName = currentFolder.split('/').pop() || '';
-                const formattedSub = subName
-                  .split(/[-_]/)
-                  .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
-                  .join(' ');
-                title = `${formattedSub} (${cleanName.replace(/\.md$/, '')})`;
-              } else {
-                title = cleanName.replace(/\.md$/, '');
-              }
-            }
-
-            const isSkillCategory =
-              isSkillsFolder ||
-              currentFolder.toLowerCase().includes('skill') ||
-              parsed.frontmatter.category === 'skills' ||
-              cleanName.toLowerCase().includes('skill');
-
-            const fileObj: VaultFile = {
-              id: filePath,
-              driveFileId: item.id,
-              name: cleanName,
-              path: filePath,
-              folder: currentFolder,
-              content: text,
-              frontmatter: {
-                ...parsed.frontmatter,
-                title: title,
-                category: isSkillCategory
-                  ? 'skills'
-                  : parsed.frontmatter.category || (currentFolder.split('/')[0] as any),
-              },
-              createdAt: item.modifiedTime ? new Date(item.modifiedTime).getTime() : Date.now(),
-              updatedAt: item.modifiedTime ? new Date(item.modifiedTime).getTime() : Date.now(),
-            };
-
-            importedFiles.push(fileObj);
-            return fileObj;
-          } catch (err) {
-            console.error(`Error reading ${item.name} from Google Drive:`, err);
-            return null;
-          }
-        });
+    const eligibleItems = items.filter((item) => {
+      if (item.mimeType?.startsWith('application/vnd.google-apps.')) return false;
+      if (!isSkillsFolder) {
+        const hasTextExt =
+          item.name.endsWith('.md') ||
+          item.name.endsWith('.markdown') ||
+          item.name.endsWith('.txt');
+        const isTextMime =
+          item.mimeType === 'text/markdown' ||
+          item.mimeType === 'text/plain' ||
+          item.mimeType === 'application/octet-stream';
+        if (!hasTextExt && !isTextMime) return false;
       }
-    } catch (err) {
-      console.warn(`Error querying files in folder ${folderId} (${relativePath}):`, err);
-    }
+      return true;
+    });
+
+    // Concurrently fetch file contents in batches of 10 for faster sign-in
+    await mapConcurrent(eligibleItems, 10, async (item) => {
+      const cleanName = item.name.endsWith('.md') ? item.name : `${item.name}.md`;
+      const currentFolder = relativePath || (isSkillsFolder ? 'skills' : 'notes');
+      const filePath = `${currentFolder}/${cleanName}`;
+
+      if (processedPaths.has(filePath)) return null;
+      processedPaths.add(filePath);
+
+      try {
+        const contentRes = await driveFetch(`files/${encodeURIComponent(item.id)}?alt=media`);
+        const text = await contentRes.text();
+        const parsed = parseFrontmatter(text);
+
+        let title = parsed.frontmatter.title;
+        if (!title || title.toUpperCase() === 'SKILL' || title.toLowerCase() === 'untitled') {
+          if (currentFolder.startsWith('skills/') && currentFolder.split('/').length > 1) {
+            const subName = currentFolder.split('/').pop() || '';
+            const formattedSub = subName
+              .split(/[-_]/)
+              .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+              .join(' ');
+            title = `${formattedSub} (${cleanName.replace(/\.md$/, '')})`;
+          } else {
+            title = cleanName.replace(/\.md$/, '');
+          }
+        }
+
+        const isSkillCategory =
+          isSkillsFolder ||
+          currentFolder.toLowerCase().includes('skill') ||
+          parsed.frontmatter.category === 'skills' ||
+          cleanName.toLowerCase().includes('skill');
+
+        const timestamp = item.modifiedTime ? new Date(item.modifiedTime).getTime() : Date.now();
+        const fileObj: VaultFile = {
+          id: filePath,
+          driveFileId: item.id,
+          driveModifiedTime: item.modifiedTime,
+          name: cleanName,
+          path: filePath,
+          folder: currentFolder,
+          content: text,
+          frontmatter: {
+            ...parsed.frontmatter,
+            title: title,
+            category: isSkillCategory
+              ? 'skills'
+              : parsed.frontmatter.category || (currentFolder.split('/')[0] as any),
+          },
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+
+        importedFiles.push(fileObj);
+        return fileObj;
+      } catch (err) {
+        if (err instanceof DriveAuthError) throw err;
+        console.error(`Error reading ${item.name} from Google Drive:`, err);
+        failedPaths.add(filePath);
+        return null;
+      }
+    });
 
     // 2. Scan child sub-directories in this directory
-    try {
-      const qDirs = `'${folderId}' in parents and trashed = false and mimeType = 'application/vnd.google-apps.folder'`;
-      const resDirs = await driveFetch(`files?q=${encodeURIComponent(qDirs)}&fields=files(id,name)`);
-      const dataDirs = await resDirs.json();
-
-      if (dataDirs.files && Array.isArray(dataDirs.files)) {
-        for (const subDir of dataDirs.files) {
-          // Normalize standard folder names if at top-level
-          let childRelative = subDir.name;
-          if (!relativePath) {
-            const nameLower = subDir.name.toLowerCase().trim();
-            if (
-              nameLower === 'skills' ||
-              nameLower === 'agent skills' ||
-              nameLower === 'agent-skills' ||
-              nameLower.includes('agent skill') ||
-              nameLower.endsWith('skills')
-            ) {
-              childRelative = 'skills';
-            } else if (nameLower.includes('goal')) {
-              childRelative = 'goals';
-            } else if (nameLower.includes('project')) {
-              childRelative = 'projects';
-            } else if (nameLower.includes('note')) {
-              childRelative = 'notes';
-            } else if (nameLower.includes('archive')) {
-              childRelative = 'archive';
-            }
-          } else {
-            childRelative = `${relativePath}/${subDir.name}`;
-          }
-          await scanDirectory(subDir.id, childRelative);
-        }
-      }
-    } catch (err) {
-      console.warn(`Error scanning subdirectories in ${folderId}:`, err);
+    const subDirs = await listAll<{ id: string; name: string }>(
+      `${parentQuery} and mimeType = '${FOLDER_MIME}'`,
+      'id,name'
+    );
+    for (const subDir of subDirs) {
+      // Normalize standard folder names if at top-level
+      const childRelative = relativePath
+        ? `${relativePath}/${subDir.name}`
+        : normalizeTopLevelFolder(subDir.name);
+      await scanDirectory(subDir.id, childRelative);
     }
   }
 
-  // Scan root directory and all its child sub-directories once
   await scanDirectory(rootId, '');
 
-  // 3. Optional Global Search ONLY if explicitly requested
-  if (includeGlobalSearch) {
-    onProgress?.('Searching external folders for Agent Skills...');
-    try {
-      const qSkillsGlobal = `mimeType = 'application/vnd.google-apps.folder' and trashed = false and (name = 'skills' or name = 'Skills' or name = 'SKILLS' or name = 'agent-skills' or name = 'Agent Skills')`;
-      const resSkillsGlobal = await driveFetch(
-        `files?q=${encodeURIComponent(qSkillsGlobal)}&fields=files(id,name,parents)`
-      );
-      const dataSkillsGlobal = await resSkillsGlobal.json();
-
-      if (dataSkillsGlobal.files && Array.isArray(dataSkillsGlobal.files)) {
-        for (const sf of dataSkillsGlobal.files) {
-          if (sf.id === rootId) continue;
-          if (sf.parents && sf.parents.includes(rootId)) continue;
-          await scanDirectory(sf.id, 'skills');
-        }
-      }
-    } catch (err) {
-      console.warn('Error querying global skills folders in Drive:', err);
-    }
-
-    // Global Search for standalone skill specification files (e.g. SKILL.md, skill.md)
-    try {
-      const qSkillFiles = `trashed = false and mimeType != 'application/vnd.google-apps.folder' and (name = 'SKILL.md' or name = 'skill.md' or name contains '.skill')`;
-      const resSkillFiles = await driveFetch(
-        `files?q=${encodeURIComponent(qSkillFiles)}&fields=files(id,name,modifiedTime,parents,mimeType)`
-      );
-      const dataSkillFiles = await resSkillFiles.json();
-
-      if (dataSkillFiles.files && Array.isArray(dataSkillFiles.files)) {
-        for (const sf of dataSkillFiles.files) {
-          if (sf.mimeType?.startsWith('application/vnd.google-apps.')) continue;
-
-          let parentSlug = '';
-          if (sf.parents && sf.parents[0]) {
-            try {
-              const parentRes = await driveFetch(`files/${sf.parents[0]}?fields=id,name`);
-              const parentData = await parentRes.json();
-              if (
-                parentData.name &&
-                parentData.name !== 'root' &&
-                parentData.name !== ROOT_FOLDER_NAME
-              ) {
-                parentSlug = parentData.name.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-              }
-            } catch {
-              // ignore
-            }
-          }
-
-          const skillFolder =
-            parentSlug && parentSlug !== 'skills' ? `skills/${parentSlug}` : 'skills';
-          const cleanName = sf.name.endsWith('.md') ? sf.name : `${sf.name}.md`;
-          const filePath = `${skillFolder}/${cleanName}`;
-
-          if (processedPaths.has(filePath)) continue;
-          processedPaths.add(filePath);
-
-          try {
-            const contentRes = await driveFetch(`files/${sf.id}?alt=media`);
-            const text = await contentRes.text();
-            const parsed = parseFrontmatter(text);
-            let title = parsed.frontmatter.title;
-            if (!title || title.toUpperCase() === 'SKILL' || title.toLowerCase() === 'untitled') {
-              title = parentSlug
-                ? parentSlug
-                    .split(/[-_]/)
-                    .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
-                    .join(' ')
-                : cleanName.replace(/\.md$/, '');
-            }
-
-            importedFiles.push({
-              id: filePath,
-              driveFileId: sf.id,
-              name: cleanName,
-              path: filePath,
-              folder: skillFolder,
-              content: text,
-              frontmatter: {
-                ...parsed.frontmatter,
-                title,
-                category: 'skills',
-              },
-              createdAt: sf.modifiedTime ? new Date(sf.modifiedTime).getTime() : Date.now(),
-              updatedAt: sf.modifiedTime ? new Date(sf.modifiedTime).getTime() : Date.now(),
-            });
-          } catch (err) {
-            console.warn(`Error reading standalone skill file ${sf.name}:`, err);
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Error querying standalone skill files in Drive:', err);
-    }
-  }
-
-  return importedFiles;
+  return { files: importedFiles, failedPaths };
 }
+
+/**
+ * Imports markdown files from the Google Drive 'Markdown Life Vault' folder, including nested sub-directories.
+ */
+export async function importFilesFromDrive(options: ImportDriveOptions = {}): Promise<VaultFile[]> {
+  const { files } = await importVaultFromDrive(options);
+  return files;
+}
+
+// ---------------------------------------------------------------------------
+// Sharing
+// ---------------------------------------------------------------------------
 
 export interface DrivePermission {
   id: string;
@@ -686,22 +755,28 @@ export interface ProjectShareInfo {
  * and lists all current collaborators and permissions.
  */
 export async function getProjectFolderShareInfo(projectPath: string): Promise<ProjectShareInfo> {
-  const { rootId } = await getVaultFolderHierarchy();
-  const folderId = await resolveDriveFolderId(projectPath, rootId);
+  const folderId = await resolveDriveFolderId(projectPath, await getVaultRootId());
 
   // 1. Fetch folder metadata including webViewLink and owners
   const folderRes = await driveFetch(
-    `files/${folderId}?fields=id,name,webViewLink,owners(displayName,emailAddress)`
+    `files/${encodeURIComponent(folderId)}?fields=id,name,webViewLink,owners(displayName,emailAddress)`
   );
   const folderData = await folderRes.json();
 
-  // 2. Fetch permissions list
-  const permRes = await driveFetch(
-    `files/${folderId}/permissions?fields=permissions(id,type,role,emailAddress,displayName,photoLink)`
-  );
-  const permData = await permRes.json();
+  // 2. Fetch permissions list (paginated)
+  const permissions: DrivePermission[] = [];
+  let pageToken: string | undefined;
+  do {
+    let url =
+      `files/${encodeURIComponent(folderId)}/permissions?pageSize=100` +
+      `&fields=${encodeURIComponent('nextPageToken,permissions(id,type,role,emailAddress,displayName,photoLink)')}`;
+    if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+    const permRes = await driveFetch(url);
+    const permData = await permRes.json();
+    if (Array.isArray(permData.permissions)) permissions.push(...permData.permissions);
+    pageToken = permData.nextPageToken || undefined;
+  } while (pageToken);
 
-  const permissions: DrivePermission[] = Array.isArray(permData.permissions) ? permData.permissions : [];
   const owner = folderData.owners && folderData.owners[0];
 
   return {

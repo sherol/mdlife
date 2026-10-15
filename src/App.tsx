@@ -1,23 +1,25 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { User } from 'firebase/auth';
 import { HardDrive, Plus, Sparkles, RefreshCw, Loader2 } from 'lucide-react';
 import { VaultFile, ActiveTab, FileCategory, DriveConnectionStatus } from './types';
-import { loadVaultFiles, saveVaultFiles, loadUnsavedFileIds, saveUnsavedFileIds, getTemplateForCategory } from './utils/storage';
+import {
+  loadVaultFiles,
+  loadUnsavedFileIds,
+  saveUnsavedFileIds,
+  scheduleSaveVaultFiles,
+  clearVaultCache,
+  clearAllVaultStorage,
+  loadBypassedAuth,
+  saveBypassedAuth,
+  getTemplateForCategory,
+} from './utils/storage';
 import { parseFrontmatter, toggleCheckboxInMarkdown, updateWikiLinks } from './utils/markdownParser';
 import { initAuth, googleSignIn, logout, subscribeDriveStatus, testDriveConnection } from './utils/googleAuth';
-import {
-  saveFileToDrive,
-  deleteFileFromDrive,
-  renameFileInDrive,
-  getVaultFolderHierarchy,
-  importFilesFromDrive,
-  syncAllFilesToDrive,
-} from './utils/googleDrive';
+import { renameFileInDrive, syncAllFilesToDrive, resetDriveCaches } from './utils/googleDrive';
+import { isDriveSyncDisabled } from './utils/storageKeys';
+import { getInitialVaultFiles } from './data/initialVault';
+import { useRefState } from './hooks/useRefState';
+import { useDriveSync, SyncSummary } from './hooks/useDriveSync';
 import { VaultHeader } from './components/VaultHeader';
 import { VaultSidebar } from './components/VaultSidebar';
 import { MarkdownEditor } from './components/MarkdownEditor';
@@ -36,22 +38,13 @@ interface AppProps {
 }
 
 export default function App({ forceOffline = false }: AppProps) {
-  const isMockMode =
-    forceOffline ||
-    (typeof window !== 'undefined' &&
-      (window.location.pathname.endsWith('mock.html') ||
-        window.location.pathname.endsWith('/mock') ||
-        window.location.search.includes('offline=true') ||
-        window.location.search.includes('mock=true')));
+  // Mock mode is detected (and its storage namespace isolated) before init in utils/storageKeys.
+  const isMockMode = forceOffline || isDriveSyncDisabled();
 
-  // Instant Startup: Load cached files immediately so editor is ready with zero delay
-  const [files, setFiles] = useState<VaultFile[]>(() => {
-    return loadVaultFiles();
-  });
-  const [selectedFileId, setSelectedFileId] = useState<string | null>(() => {
-    const loaded = loadVaultFiles();
-    return loaded.length > 0 ? loaded[0].id : null;
-  });
+  // Instant Startup: Load cached files immediately so editor is ready with zero delay.
+  // files/unsavedFileIds are mirrored into refs so the async Drive sync queue always reads the latest state.
+  const [files, updateFiles, filesRef] = useRefState<VaultFile[]>(loadVaultFiles);
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(() => filesRef.current[0]?.id ?? null);
   const [activeTab, setActiveTab] = useState<ActiveTab>('editor');
   const [isExportingZip, setIsExportingZip] = useState(false);
   const [isNewFileModalOpen, setIsNewFileModalOpen] = useState(false);
@@ -64,30 +57,58 @@ export default function App({ forceOffline = false }: AppProps) {
   // Google Drive & Auth State
   const [googleUser, setGoogleUser] = useState<User | null>(null);
   const [driveStatus, setDriveStatus] = useState<DriveConnectionStatus>('disconnected');
-  const [unsavedFileIds, setUnsavedFileIds] = useState<Set<string>>(loadUnsavedFileIds);
+  const [unsavedFileIds, updateUnsaved, unsavedRef] = useRefState<Set<string>>(loadUnsavedFileIds);
   const [isReloadModalOpen, setIsReloadModalOpen] = useState(false);
-  const [hasBypassedAuth, setHasBypassedAuth] = useState<boolean>(() => {
-    if (isMockMode) return true;
-    return localStorage.getItem('md_vault_bypassed_auth') === 'true';
-  });
+  const [hasBypassedAuth, setHasBypassedAuth] = useState<boolean>(() => isMockMode || loadBypassedAuth());
   const [isStartingSignIn, setIsStartingSignIn] = useState(false);
   const [startScreenError, setStartScreenError] = useState<string | null>(null);
   const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
   const [isSavingSingleFileToDrive, setIsSavingSingleFileToDrive] = useState(false);
-  const [isDriveSyncing, setIsDriveSyncing] = useState(false);
-  const [isRefreshingDrive, setIsRefreshingDrive] = useState(false);
-  const [isLoadingDriveFiles, setIsLoadingDriveFiles] = useState(false);
   const [toastNotification, setToastNotification] = useState<{
     text: string;
     type: 'success' | 'info' | 'error';
   } | null>(null);
 
-  const isFetchingDriveRef = useRef(false);
+  // Mock edits can never reach Drive: the sync queue is disabled (and driveFetch refuses in mock mode).
+  const isDriveEnabled = !!googleUser && !isMockMode;
+
+  const {
+    isDriveSyncing,
+    isRefreshingDrive,
+    setIsRefreshingDrive,
+    isLoadingDriveFiles,
+    markUnsaved,
+    flushSaves,
+    deleteFromDrive,
+    discardLocalChanges,
+    resetSyncState,
+    refreshFromDrive: fetchFilesFromDrive,
+    mergeImportedFiles,
+  } = useDriveSync({
+    enabled: isDriveEnabled,
+    driveStatus,
+    setDriveStatus,
+    files,
+    filesRef,
+    updateFiles,
+    unsavedFileIds,
+    unsavedRef,
+    updateUnsaved,
+    setSelectedFileId,
+    notify: setToastNotification,
+  });
 
   // CRITICAL PERSISTENCE: Save unsavedFileIds to localStorage so dirty edits survive refresh
   useEffect(() => {
     saveUnsavedFileIds(unsavedFileIds);
   }, [unsavedFileIds]);
+
+  // CRITICAL SAFETY: back up files to browser localStorage (debounced) so edits are never lost
+  useEffect(() => {
+    if (files.length > 0) {
+      scheduleSaveVaultFiles(files);
+    }
+  }, [files]);
 
   // Subscribe to drive status updates
   useEffect(() => {
@@ -103,111 +124,10 @@ export default function App({ forceOffline = false }: AppProps) {
     return () => unsubscribe();
   }, []);
 
-  /**
-   * Fetches files from Google Drive and safely merges them with local edits so work is never lost.
-   */
-  const fetchFilesFromDrive = useCallback(async (isSilent = false) => {
-    if (isFetchingDriveRef.current) return;
-    isFetchingDriveRef.current = true;
-
-    try {
-      setIsRefreshingDrive(true);
-      if (!isSilent) setIsLoadingDriveFiles(true);
-      const driveFiles = await importFilesFromDrive();
-
-      // SMART RESILIENT MERGE:
-      // Never overwrite files that have unsaved local edits or newer local timestamps
-      setFiles((prevLocalFiles) => {
-        const mergedMap = new Map<string, VaultFile>();
-        // Add Drive files
-        for (const df of driveFiles) {
-          mergedMap.set(df.id, df);
-        }
-
-        const currentUnsaved = loadUnsavedFileIds();
-        let preservedLocalCount = 0;
-
-        for (const lf of prevLocalFiles) {
-          const hasUnsaved = currentUnsaved.has(lf.id);
-          const driveVersion = mergedMap.get(lf.id);
-
-          if (hasUnsaved) {
-            // Keep local version with unsaved changes, preserving driveFileId if known
-            mergedMap.set(lf.id, {
-              ...lf,
-              driveFileId: driveVersion?.driveFileId || lf.driveFileId,
-            });
-            preservedLocalCount++;
-          } else if (driveVersion) {
-            // If local version has a significantly newer updatedAt timestamp, preserve it
-            if (lf.updatedAt && driveVersion.updatedAt && lf.updatedAt > driveVersion.updatedAt + 2000) {
-              mergedMap.set(lf.id, lf);
-              setUnsavedFileIds((prev) => new Set(prev).add(lf.id));
-              preservedLocalCount++;
-            }
-          } else if (currentUnsaved.has(lf.id)) {
-            // File created locally while offline
-            mergedMap.set(lf.id, lf);
-            preservedLocalCount++;
-          }
-        }
-
-        const finalMerged = Array.from(mergedMap.values());
-        saveVaultFiles(finalMerged);
-
-        if (preservedLocalCount > 0 && !isSilent) {
-          setToastNotification({
-            type: 'info',
-            text: `Synced with Google Drive (${driveFiles.length} file(s)). Safely preserved ${preservedLocalCount} local file(s) with newer edits.`,
-          });
-        }
-
-        return finalMerged;
-      });
-
-      if (driveFiles.length > 0) {
-        setSelectedFileId((prev) => {
-          return prev || driveFiles[0].id;
-        });
-        if (!isSilent) {
-          setToastNotification({
-            type: 'success',
-            text: `Synced with Google Drive: loaded ${driveFiles.length} file(s).`,
-          });
-        }
-      } else {
-        setSelectedFileId((prev) => prev);
-        if (!isSilent) {
-          setToastNotification({
-            type: 'info',
-            text: 'Google Drive connected: 0 files in /Markdown Life Vault/.',
-          });
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to load files from Google Drive:', err);
-      const isAuthErr =
-        err?.message?.includes('401') ||
-        err?.message?.includes('expired') ||
-        err?.message?.includes('authenticated');
-      if (isAuthErr) {
-        setDriveStatus('expired');
-      }
-      setToastNotification({
-        type: 'error',
-        text: err?.message || 'Failed to load files from Google Drive',
-      });
-    } finally {
-      isFetchingDriveRef.current = false;
-      setIsRefreshingDrive(false);
-      setIsLoadingDriveFiles(false);
-    }
-  }, []);
-
   // Initialize Firebase Auth listener
   useEffect(() => {
     if (isMockMode) {
-      // In offline mock mode, skip Google Drive auto-fetch to maintain local state
+      // In offline mock mode, never touch Google auth / Drive
       return;
     }
     const unsubscribe = initAuth(
@@ -216,7 +136,7 @@ export default function App({ forceOffline = false }: AppProps) {
         setHasBypassedAuth(false);
         if (token) {
           setDriveStatus('connected');
-          // Automatically load ONLY files that exist in Google Drive
+          // Automatically load files from Google Drive (merged with any unsaved local edits)
           fetchFilesFromDrive(false);
         } else {
           setDriveStatus('expired');
@@ -252,72 +172,6 @@ export default function App({ forceOffline = false }: AppProps) {
     };
   }, [googleUser, isMockMode]);
 
-  // Network online/offline event listeners with automatic Google Drive reconnection
-  useEffect(() => {
-    if (isMockMode) return;
-
-    const handleOffline = () => {
-      setDriveStatus('disconnected');
-      setToastNotification({
-        type: 'info',
-        text: 'Internet connection lost. You can continue editing — all changes are saved locally in your browser.',
-      });
-    };
-
-    const handleOnline = async () => {
-      if (!googleUser) return;
-      setToastNotification({
-        type: 'info',
-        text: 'Internet restored! Checking Google Drive connection...',
-      });
-      try {
-        const res = await testDriveConnection();
-        if (res.ok) {
-          setDriveStatus('connected');
-          // Auto-sync any pending unsaved local files
-          const filesToSync = files.filter((f) => unsavedFileIds.has(f.id));
-          if (filesToSync.length > 0) {
-            let syncedCount = 0;
-            for (const unsavedF of filesToSync) {
-              try {
-                await saveFileToDrive(unsavedF);
-                syncedCount++;
-                setUnsavedFileIds((prev) => {
-                  const next = new Set(prev);
-                  next.delete(unsavedF.id);
-                  return next;
-                });
-              } catch (err) {
-                console.error(`Auto-sync failed for ${unsavedF.name}:`, err);
-              }
-            }
-            setToastNotification({
-              type: 'success',
-              text: `Reconnected to Google Drive! Synced ${syncedCount} pending local file(s).`,
-            });
-          } else {
-            setToastNotification({
-              type: 'success',
-              text: 'Reconnected to Google Drive successfully.',
-            });
-          }
-        } else {
-          setDriveStatus(res.error?.includes('401') || res.error?.includes('expired') ? 'expired' : 'disconnected');
-        }
-      } catch (err) {
-        setDriveStatus('disconnected');
-      }
-    };
-
-    window.addEventListener('offline', handleOffline);
-    window.addEventListener('online', handleOnline);
-
-    return () => {
-      window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('online', handleOnline);
-    };
-  }, [googleUser, files, unsavedFileIds, isMockMode]);
-
   // One-time banner when opening in mock mode
   useEffect(() => {
     if (isMockMode) {
@@ -338,91 +192,35 @@ export default function App({ forceOffline = false }: AppProps) {
     }
   }, [toastNotification]);
 
-  // CRITICAL SAFETY: ALWAYS backup files to browser localStorage so edits are NEVER lost
-  useEffect(() => {
-    if (files.length > 0) {
-      saveVaultFiles(files);
-    }
-  }, [files]);
-
   // Currently active file object
   const currentFile = files.find((f) => f.id === selectedFileId) || files[0] || null;
 
-  // Auto-save edited files to Google Drive (debounced by 1.2s)
-  useEffect(() => {
-    if (!googleUser || unsavedFileIds.size === 0) return;
-    if (driveStatus !== 'connected') return;
-
-    const timer = setTimeout(async () => {
-      const pendingFiles = files.filter((f) => unsavedFileIds.has(f.id));
-      if (pendingFiles.length === 0) return;
-
-      try {
-        setIsDriveSyncing(true);
-        for (const fileToSave of pendingFiles) {
-          try {
-            const res = await saveFileToDrive(fileToSave);
-            if (res.fileId && res.fileId !== fileToSave.driveFileId) {
-              setFiles((prev) => {
-                const next = prev.map((f) => (f.id === fileToSave.id ? { ...f, driveFileId: res.fileId } : f));
-                saveVaultFiles(next);
-                return next;
-              });
-            }
-            // Successfully saved to Google Drive: remove from unsaved list
-            setUnsavedFileIds((prev) => {
-              const next = new Set(prev);
-              next.delete(fileToSave.id);
-              return next;
-            });
-          } catch (fileErr: any) {
-            console.error(`Auto-save error for ${fileToSave.name}:`, fileErr);
-            if (fileErr?.message?.includes('401') || fileErr?.message?.includes('expired') || fileErr?.message?.includes('authenticated')) {
-              throw fileErr;
-            }
-          }
-        }
-      } catch (err: any) {
-        console.error('Auto-save to Google Drive error:', err);
-        const isAuthErr =
-          err?.message?.includes('401') ||
-          err?.message?.includes('expired') ||
-          err?.message?.includes('authenticated');
-
-        if (isAuthErr) {
-          setDriveStatus('expired');
-          setToastNotification({
-            type: 'error',
-            text: 'Google Drive session expired. Your recent edits are safely preserved locally in browser storage. Click Reconnect to sync.',
-          });
-        }
-      } finally {
-        setIsDriveSyncing(false);
-      }
-    }, 1200);
-
-    return () => clearTimeout(timer);
-  }, [files, googleUser, unsavedFileIds, driveStatus]);
+  /** Toast describing the outcome of a Drive flush. */
+  const notifySyncSummary = useCallback((summary: SyncSummary, prefix: string) => {
+    if (summary.authFailed) return; // the sync queue already showed the "session expired" toast
+    const parts = [`${prefix} ${summary.saved} file(s) to Google Drive`];
+    if (summary.conflicts > 0) parts.push(`${summary.conflicts} conflict(s) kept as "(conflict)" copies`);
+    if (summary.failed > 0) parts.push(`${summary.failed} failed`);
+    if (summary.skipped > 0) parts.push(`${summary.skipped} waiting for connection`);
+    setToastNotification({
+      type: summary.failed > 0 || summary.skipped > 0 ? 'error' : 'success',
+      text: `${parts.join(', ')}.`,
+    });
+  }, []);
 
   // Handle content updates to current file
   const handleUpdateContent = (newContent: string) => {
     if (!currentFile) return;
+    const targetId = currentFile.id;
     const { frontmatter } = parseFrontmatter(newContent);
-    const updated: VaultFile = {
-      ...currentFile,
-      content: newContent,
-      frontmatter,
-      updatedAt: Date.now(),
-    };
 
+    updateFiles((prev) =>
+      prev.map((f) =>
+        f.id === targetId ? { ...f, content: newContent, frontmatter, updatedAt: Date.now() } : f
+      )
+    );
     // Mark as having unsaved local changes pending Drive sync
-    setUnsavedFileIds((prev) => new Set(prev).add(currentFile.id));
-
-    setFiles((prev) => {
-      const next = prev.map((f) => (f.id === currentFile.id ? updated : f));
-      saveVaultFiles(next);
-      return next;
-    });
+    markUnsaved([targetId]);
   };
 
   // Toggle a checkbox in the active file
@@ -479,38 +277,29 @@ export default function App({ forceOffline = false }: AppProps) {
       updatedAt: Date.now(),
     };
 
-    if (googleUser) {
+    updateFiles((prev) => [newFile, ...prev.filter((f) => f.id !== newFile.id)]);
+    markUnsaved([newFile.id]);
+    setSelectedFileId(newFile.id);
+    setActiveTab('editor');
+
+    if (isDriveEnabled) {
       try {
         setIsSavingSingleFileToDrive(true);
-        const saveRes = await saveFileToDrive(newFile);
-        const createdWithId: VaultFile = {
-          ...newFile,
-          driveFileId: saveRes.fileId,
-        };
-        setFiles((prev) => [createdWithId, ...prev]);
-        setSelectedFileId(createdWithId.id);
-        setActiveTab('editor');
-        setToastNotification({
-          type: 'success',
-          text: `Created and saved "${cleanName}" directly to Google Drive!`,
-        });
-      } catch (err: any) {
-        console.error('Error saving new file to Google Drive:', err);
-        setFiles((prev) => [newFile, ...prev]);
-        setUnsavedFileIds((prev) => new Set(prev).add(newFile.id));
-        setSelectedFileId(newFile.id);
-        setActiveTab('editor');
-        setToastNotification({
-          type: 'error',
-          text: `Failed to create file in Google Drive (${err?.message || 'error'}). File saved locally.`,
-        });
+        const summary = await flushSaves([newFile.id]);
+        if (summary.saved > 0) {
+          setToastNotification({
+            type: 'success',
+            text: `Created and saved "${cleanName}" directly to Google Drive!`,
+          });
+        } else if (!summary.authFailed) {
+          setToastNotification({
+            type: 'error',
+            text: `Could not save "${cleanName}" to Google Drive yet. File saved locally and will sync automatically.`,
+          });
+        }
       } finally {
         setIsSavingSingleFileToDrive(false);
       }
-    } else {
-      setFiles((prev) => [newFile, ...prev]);
-      setSelectedFileId(newFile.id);
-      setActiveTab('editor');
     }
   };
 
@@ -528,24 +317,11 @@ export default function App({ forceOffline = false }: AppProps) {
     setIsDeletingFile(true);
 
     try {
-      // If connected to Google Drive, delete file and all its copies from Google Drive
-      if (googleUser && driveStatus !== 'disconnected') {
-        try {
-          await deleteFileFromDrive(target.folder, target.name, target.driveFileId);
-        } catch (err: any) {
-          console.error('Failed to delete file from Google Drive:', err);
-        }
-      }
-
-      // Remove from local React state and update localStorage - clean up any copy with matching id or path
-      const nextFiles = files.filter(
-        (f) => f.id !== target.id && f.path !== target.path
-      );
-      saveVaultFiles(nextFiles);
-      setFiles(nextFiles);
-
-      // Clear from unsaved changes list
-      setUnsavedFileIds((prev) => {
+      // Remove locally first; the Drive deletion runs now or is queued (persisted) and retried on reconnect.
+      const nextFiles = filesRef.current.filter((f) => f.id !== target.id && f.path !== target.path);
+      updateFiles(() => nextFiles);
+      updateUnsaved((prev) => {
+        if (!prev.has(target.id)) return prev;
         const next = new Set(prev);
         next.delete(target.id);
         return next;
@@ -556,10 +332,19 @@ export default function App({ forceOffline = false }: AppProps) {
         setSelectedFileId(nextFiles[0]?.id || null);
       }
 
-      setToastNotification({
-        type: 'info',
-        text: `Deleted "${target.name}"${googleUser ? ' from workspace and Google Drive' : ''}.`,
-      });
+      if (isDriveEnabled) {
+        const outcome = await deleteFromDrive(target);
+        setToastNotification(
+          outcome === 'deleted'
+            ? { type: 'info', text: `Deleted "${target.name}" from workspace and Google Drive.` }
+            : {
+                type: 'error',
+                text: `Deleted "${target.name}" locally. Google Drive is unavailable — it will be removed from Drive when you reconnect.`,
+              }
+        );
+      } else {
+        setToastNotification({ type: 'info', text: `Deleted "${target.name}".` });
+      }
     } catch (err: any) {
       setToastNotification({
         type: 'error',
@@ -609,7 +394,7 @@ export default function App({ forceOffline = false }: AppProps) {
 
   // Rename file
   const handleRenameFile = async (id: string, rawNewName: string): Promise<boolean> => {
-    const fileToRename = files.find((f) => f.id === id);
+    const fileToRename = filesRef.current.find((f) => f.id === id);
     if (!fileToRename) return false;
 
     // Sanitize filename
@@ -625,7 +410,7 @@ export default function App({ forceOffline = false }: AppProps) {
     }
 
     // Check collision in same folder
-    const collision = files.find(
+    const collision = filesRef.current.find(
       (f) =>
         f.folder === fileToRename.folder &&
         f.name.toLowerCase() === cleanName.toLowerCase() &&
@@ -643,26 +428,34 @@ export default function App({ forceOffline = false }: AppProps) {
     const newPath = `${fileToRename.folder}/${cleanName}`;
     const newId = newPath;
 
-    const renamedFile: VaultFile = {
+    let renamedFile: VaultFile = {
       ...fileToRename,
       id: newId,
       name: cleanName,
       path: newPath,
       updatedAt: Date.now(),
     };
+    // The renamed file needs a content save when it had unsaved edits or was not found in Drive.
+    let needsSave = unsavedRef.current.has(id);
 
-    if (googleUser) {
+    if (isDriveEnabled) {
       try {
-        const renamed = await renameFileInDrive(
+        const result = await renameFileInDrive(
           fileToRename.folder,
           oldName,
           cleanName,
           fileToRename.driveFileId
         );
-        if (!renamed) {
-          // If PATCH failed to locate the old file, save as new and delete old
-          await saveFileToDrive(renamedFile);
-          await deleteFileFromDrive(fileToRename.folder, oldName);
+        if (result.renamed) {
+          renamedFile = {
+            ...renamedFile,
+            driveFileId: result.fileId,
+            driveModifiedTime: result.modifiedTime || renamedFile.driveModifiedTime,
+          };
+        } else {
+          // Not in Drive yet: the save queue will create it under the new name.
+          renamedFile = { ...renamedFile, driveFileId: undefined, driveModifiedTime: undefined };
+          needsSave = true;
         }
         setToastNotification({
           type: 'success',
@@ -683,41 +476,26 @@ export default function App({ forceOffline = false }: AppProps) {
       });
     }
 
-    // Update the file and update any [[wiki-links]] referencing the old file in all other files
-    const filesToSync: VaultFile[] = [];
-    setFiles((prev) =>
-      prev.map((f) => {
-        if (f.id === id) {
-          return renamedFile;
-        }
+    // Rename the file and rewrite any [[wiki-links]] referencing it in all other files
+    // (computed outside any state updater; side effects follow).
+    const linkUpdatedIds: string[] = [];
+    const nextFiles = filesRef.current.map((f) => {
+      if (f.id === id) return renamedFile;
+      const updatedContent = updateWikiLinks(f.content, oldName, cleanName);
+      if (updatedContent === f.content) return f;
+      linkUpdatedIds.push(f.id);
+      return { ...f, content: updatedContent, updatedAt: Date.now() };
+    });
+    updateFiles(() => nextFiles);
 
-        const updatedContent = updateWikiLinks(f.content, oldName, cleanName);
-        if (updatedContent !== f.content) {
-          const updatedFile: VaultFile = {
-            ...f,
-            content: updatedContent,
-            updatedAt: Date.now(),
-          };
-          if (googleUser) {
-            filesToSync.push(updatedFile);
-          }
-          return updatedFile;
-        }
-
-        return f;
-      })
-    );
-
-    // If other files had wiki-links updated and user is connected to Drive, sync them
-    if (googleUser && filesToSync.length > 0) {
-      for (const updatedF of filesToSync) {
-        try {
-          await saveFileToDrive(updatedF);
-        } catch (err) {
-          console.error(`Failed to update wiki-links in Drive file ${updatedF.name}:`, err);
-        }
-      }
-    }
+    // Migrate the unsaved flag to the new id and mark link-rewritten files unsaved (the queue syncs them)
+    updateUnsaved((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      if (needsSave) next.add(newId);
+      linkUpdatedIds.forEach((fid) => next.add(fid));
+      return next;
+    });
 
     if (selectedFileId === id) {
       setSelectedFileId(newId);
@@ -738,7 +516,7 @@ export default function App({ forceOffline = false }: AppProps) {
         const folder = frontmatter.category || 'notes';
         const path = `${folder}/${item.name}`;
 
-        const vaultFile: VaultFile = {
+        imported.push({
           id: path,
           name: item.name,
           path,
@@ -747,32 +525,33 @@ export default function App({ forceOffline = false }: AppProps) {
           frontmatter,
           createdAt: Date.now(),
           updatedAt: Date.now(),
-        };
-
-        if (googleUser) {
-          try {
-            await saveFileToDrive(vaultFile);
-          } catch (err) {
-            console.error(`Failed to save imported file ${item.name} to Drive:`, err);
-          }
-        }
-
-        imported.push(vaultFile);
+        });
       }
     }
 
-    if (imported.length > 0) {
-      if (googleUser) {
-        await fetchFilesFromDrive();
-      } else {
-        setFiles((prev) => [...imported, ...prev]);
-        setSelectedFileId(imported[0].id);
-        setActiveTab('editor');
-      }
+    if (imported.length === 0) return;
+
+    const importedIds = new Set(imported.map((f) => f.id));
+    updateFiles((prev) => [
+      ...imported.map((f) => {
+        // Re-importing over an existing file keeps its Drive binding so it updates in place
+        const existing = prev.find((p) => p.id === f.id);
+        return existing
+          ? { ...f, driveFileId: existing.driveFileId, driveModifiedTime: existing.driveModifiedTime }
+          : f;
+      }),
+      ...prev.filter((f) => !importedIds.has(f.id)),
+    ]);
+    markUnsaved(imported.map((f) => f.id));
+    setSelectedFileId(imported[0].id);
+    setActiveTab('editor');
+
+    if (isDriveEnabled) {
+      flushSaves(imported.map((f) => f.id)).then((summary) => notifySyncSummary(summary, 'Imported and saved'));
     }
   };
 
-  // Initialize Starter Templates in Google Drive
+  // Initialize Starter Templates in Google Drive (always the bundled starter set, never the current cache)
   const handleInitializeDriveTemplates = async () => {
     const ok = window.confirm(
       'This will upload the standard Markdown Life Vault starter files (Goals, Projects, Skills, Notes) into your Google Drive (/Markdown Life Vault/). Proceed?'
@@ -781,8 +560,9 @@ export default function App({ forceOffline = false }: AppProps) {
 
     try {
       setIsRefreshingDrive(true);
-      const starterFiles = loadVaultFiles();
+      const starterFiles = getInitialVaultFiles();
       await syncAllFilesToDrive(starterFiles);
+      setIsRefreshingDrive(false);
       await fetchFilesFromDrive(false);
       setToastNotification({
         type: 'success',
@@ -808,9 +588,10 @@ export default function App({ forceOffline = false }: AppProps) {
         'Reset vault to initial template files? Any unsaved edits will be overwritten.'
       );
       if (!ok) return;
-      localStorage.removeItem('md_life_vault_v1');
+      clearVaultCache();
       const fresh = loadVaultFiles();
-      setFiles(fresh);
+      updateFiles(() => fresh);
+      updateUnsaved(() => new Set());
       setSelectedFileId(fresh[0]?.id || null);
     }
   };
@@ -829,7 +610,7 @@ export default function App({ forceOffline = false }: AppProps) {
       if (result) {
         setGoogleUser(result.user);
         setHasBypassedAuth(false);
-        localStorage.removeItem('md_vault_bypassed_auth');
+        saveBypassedAuth(false);
         // Unblock start screen immediately so workspace opens in ~1 second
         setIsStartingSignIn(false);
         fetchFilesFromDrive(false);
@@ -870,11 +651,15 @@ export default function App({ forceOffline = false }: AppProps) {
   };
 
   const handleSignOutGoogle = async () => {
-    await logout();
+    await logout(); // also clears the in-memory/session token
+    // Clear every locally cached piece of the signed-in vault: files, unsaved ids, pending deletions.
+    clearAllVaultStorage();
+    resetDriveCaches();
+    resetSyncState();
     setGoogleUser(null);
     setHasBypassedAuth(false);
-    localStorage.removeItem('md_vault_bypassed_auth');
-    setFiles([]);
+    updateFiles(() => []);
+    updateUnsaved(() => new Set());
     setSelectedFileId(null);
     setToastNotification({
       type: 'info',
@@ -884,9 +669,9 @@ export default function App({ forceOffline = false }: AppProps) {
 
   const handleContinueOffline = () => {
     setHasBypassedAuth(true);
-    localStorage.setItem('md_vault_bypassed_auth', 'true');
+    saveBypassedAuth(true);
     const localFiles = loadVaultFiles();
-    setFiles(localFiles);
+    updateFiles(() => localFiles);
     setSelectedFileId(localFiles[0]?.id || null);
     setToastNotification({
       type: 'info',
@@ -907,45 +692,20 @@ export default function App({ forceOffline = false }: AppProps) {
 
     try {
       setIsSavingSingleFileToDrive(true);
-      // saveFileToDrive uses driveFileId or exact folder resolution to update in-place without duplicating
-      const result = await saveFileToDrive(file);
-
-      // Bind the driveFileId to the file in state and local cache
-      setFiles((prev) => {
-        const next = prev.map((f) => (f.id === file.id ? { ...f, driveFileId: result.fileId } : f));
-        saveVaultFiles(next);
-        return next;
-      });
-
-      // Remove from unsaved local edits
-      setUnsavedFileIds((prev) => {
-        const next = new Set(prev);
-        next.delete(file.id);
-        return next;
-      });
-
-      setToastNotification({
-        type: 'success',
-        text: result.isNew
-          ? `Saved "${file.name}" to Google Drive (/Markdown Life Vault/${file.folder})`
-          : `Saved changes to Google Drive in-place (${file.name})`,
-      });
-    } catch (err: any) {
-      console.error('Failed to save file to Google Drive:', err);
-      const isAuthErr =
-        err?.message?.includes('401') ||
-        err?.message?.includes('expired') ||
-        err?.message?.includes('authenticated');
-      if (isAuthErr) {
-        setDriveStatus('expired');
+      const wasNew = !file.driveFileId;
+      markUnsaved([file.id]);
+      const summary = await flushSaves([file.id]);
+      if (summary.saved > 0) {
         setToastNotification({
-          type: 'error',
-          text: 'Google Drive session expired. Click Reconnect to save your changes.',
+          type: 'success',
+          text: wasNew
+            ? `Saved "${file.name}" to Google Drive (/Markdown Life Vault/${file.folder})`
+            : `Saved changes to Google Drive in-place (${file.name})`,
         });
-      } else {
+      } else if ((summary.failed > 0 || summary.skipped > 0) && !summary.authFailed) {
         setToastNotification({
           type: 'error',
-          text: err?.message || `Failed to save ${file.name} to Google Drive`,
+          text: `Failed to save ${file.name} to Google Drive. Your edits are kept locally and will retry.`,
         });
       }
     } finally {
@@ -962,29 +722,12 @@ export default function App({ forceOffline = false }: AppProps) {
         setGoogleUser(res.user);
         setDriveStatus('connected');
 
-        // Immediately push any pending unsaved files to Google Drive
-        const filesToSync = files.filter((f) => unsavedFileIds.has(f.id));
-        if (filesToSync.length > 0) {
-          setIsDriveSyncing(true);
-          let syncedCount = 0;
-          for (const unsavedF of filesToSync) {
-            try {
-              await saveFileToDrive(unsavedF);
-              syncedCount++;
-              setUnsavedFileIds((prev) => {
-                const next = new Set(prev);
-                next.delete(unsavedF.id);
-                return next;
-              });
-            } catch (err) {
-              console.error(`Failed to push unsaved file ${unsavedF.name}:`, err);
-            }
-          }
-          setToastNotification({
-            type: 'success',
-            text: `Reconnected to Google Drive! Saved ${syncedCount} pending local file(s).`,
-          });
+        // Immediately push any pending unsaved files (and pending deletions) to Google Drive
+        if (unsavedRef.current.size > 0) {
+          const summary = await flushSaves();
+          notifySyncSummary(summary, 'Reconnected to Google Drive! Saved');
         } else {
+          flushSaves([]);
           setToastNotification({
             type: 'success',
             text: 'Reconnected to Google Drive successfully.',
@@ -999,7 +742,6 @@ export default function App({ forceOffline = false }: AppProps) {
       });
     } finally {
       setIsStartingSignIn(false);
-      setIsDriveSyncing(false);
     }
   };
 
@@ -1014,8 +756,7 @@ export default function App({ forceOffline = false }: AppProps) {
       return;
     }
 
-    const pendingFiles = files.filter((f) => unsavedFileIds.has(f.id));
-    if (pendingFiles.length === 0) {
+    if (unsavedRef.current.size === 0) {
       setToastNotification({
         type: 'info',
         text: 'All files are already in sync with Google Drive.',
@@ -1023,58 +764,8 @@ export default function App({ forceOffline = false }: AppProps) {
       return;
     }
 
-    try {
-      setIsDriveSyncing(true);
-      let syncedCount = 0;
-      for (const f of pendingFiles) {
-        try {
-          const res = await saveFileToDrive(f);
-          syncedCount++;
-          if (res.fileId && res.fileId !== f.driveFileId) {
-            setFiles((prev) => {
-              const next = prev.map((item) =>
-                item.id === f.id ? { ...item, driveFileId: res.fileId } : item
-              );
-              saveVaultFiles(next);
-              return next;
-            });
-          }
-          setUnsavedFileIds((prev) => {
-            const next = new Set(prev);
-            next.delete(f.id);
-            return next;
-          });
-        } catch (err: any) {
-          console.error(`Failed to sync file ${f.name}:`, err);
-          if (err?.message?.includes('401') || err?.message?.includes('expired') || err?.message?.includes('authenticated')) {
-            throw err;
-          }
-        }
-      }
-      setToastNotification({
-        type: 'success',
-        text: `Synced ${syncedCount} file(s) to Google Drive (/Markdown Life Vault/).`,
-      });
-    } catch (err: any) {
-      const isAuthErr =
-        err?.message?.includes('401') ||
-        err?.message?.includes('expired') ||
-        err?.message?.includes('authenticated');
-      if (isAuthErr) {
-        setDriveStatus('expired');
-        setToastNotification({
-          type: 'error',
-          text: 'Google Drive session expired. Click Reconnect to sync pending edits.',
-        });
-      } else {
-        setToastNotification({
-          type: 'error',
-          text: `Sync error: ${err?.message || 'Check network connection'}`,
-        });
-      }
-    } finally {
-      setIsDriveSyncing(false);
-    }
+    const summary = await flushSaves();
+    notifySyncSummary(summary, 'Synced');
   };
 
   // Reload from Google Drive flow
@@ -1088,8 +779,7 @@ export default function App({ forceOffline = false }: AppProps) {
       return;
     }
 
-    const unsavedList = files.filter((f) => unsavedFileIds.has(f.id));
-    if (unsavedList.length > 0) {
+    if (unsavedRef.current.size > 0) {
       setIsReloadModalOpen(true);
       return;
     }
@@ -1113,6 +803,7 @@ export default function App({ forceOffline = false }: AppProps) {
       return;
     }
 
+    resetDriveCaches();
     await fetchFilesFromDrive(false);
   };
 
@@ -1120,21 +811,22 @@ export default function App({ forceOffline = false }: AppProps) {
     setIsReloadModalOpen(false);
     setIsRefreshingDrive(true);
     try {
-      const unsavedList = files.filter((f) => unsavedFileIds.has(f.id));
-      for (const f of unsavedList) {
-        await saveFileToDrive(f);
+      const summary = await flushSaves();
+      if (unsavedRef.current.size > 0 || summary.authFailed) {
+        if (!summary.authFailed) {
+          setToastNotification({
+            type: 'error',
+            text: `Could not save ${unsavedRef.current.size} local edit(s) before reload. Nothing was reloaded; your edits are kept.`,
+          });
+        }
+        return;
       }
-      setUnsavedFileIds(new Set());
       setToastNotification({
         type: 'success',
-        text: `Saved ${unsavedList.length} local file(s) to Drive. Reloading fresh index...`,
+        text: `Saved ${summary.saved} local file(s) to Drive. Reloading fresh index...`,
       });
+      setIsRefreshingDrive(false);
       await fetchFilesFromDrive(false);
-    } catch (err: any) {
-      setToastNotification({
-        type: 'error',
-        text: `Failed to save local edits before reload: ${err?.message}`,
-      });
     } finally {
       setIsRefreshingDrive(false);
     }
@@ -1142,8 +834,15 @@ export default function App({ forceOffline = false }: AppProps) {
 
   const handleDiscardAndReloadFromDrive = async () => {
     setIsReloadModalOpen(false);
-    setUnsavedFileIds(new Set());
+    // Drive wins: forget unsaved flags, queued saves and pending deletions, then reload.
+    discardLocalChanges();
     await executeReloadFromDrive();
+  };
+
+  // Files imported by the Drive modal are merged directly (no refetch). "Sync all" results from the
+  // modal reach the sync queue via subscribeDriveSaves (driveFileIds stored, unsaved flags cleared).
+  const handleImportedFromDriveModal = (importedFiles: VaultFile[]) => {
+    mergeImportedFiles(importedFiles);
   };
 
   // If user is not signed in to Google Drive and hasn't chosen offline exploration, show start screen
@@ -1289,6 +988,7 @@ export default function App({ forceOffline = false }: AppProps) {
               </div>
             ) : currentFile ? (
               <MarkdownEditor
+                key={currentFile.id}
                 file={currentFile}
                 allFiles={files}
                 onChangeContent={handleUpdateContent}
@@ -1369,7 +1069,7 @@ export default function App({ forceOffline = false }: AppProps) {
           onSignInWithGoogle={handleSignInWithGoogle}
           onSignOut={handleSignOutGoogle}
           files={files}
-          onImportFilesFromDrive={() => fetchFilesFromDrive(false)}
+          onImportFilesFromDrive={handleImportedFromDriveModal}
         />
       )}
 

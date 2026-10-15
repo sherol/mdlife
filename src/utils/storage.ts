@@ -1,14 +1,19 @@
 import JSZip from 'jszip';
-import { VaultFile, FileCategory } from '../types';
+import { VaultFile, FileCategory, PendingDriveDeletion } from '../types';
 import { getInitialVaultFiles } from '../data/initialVault';
-import { parseFrontmatter, stringifyWithFrontmatter } from './markdownParser';
+import { stringifyWithFrontmatter } from './markdownParser';
+import { storageKey } from './storageKeys';
 
 const VAULT_STORAGE_KEY = 'md_life_vault_v1';
 const UNSAVED_IDS_KEY = 'md_life_vault_unsaved_ids';
+const PENDING_DELETIONS_KEY = 'md_life_vault_pending_deletions';
+const BYPASSED_AUTH_KEY = 'md_vault_bypassed_auth';
+
+const VAULT_SAVE_DEBOUNCE_MS = 500;
 
 export function loadUnsavedFileIds(): Set<string> {
   try {
-    const raw = localStorage.getItem(UNSAVED_IDS_KEY);
+    const raw = localStorage.getItem(storageKey(UNSAVED_IDS_KEY));
     if (raw) {
       const arr = JSON.parse(raw);
       if (Array.isArray(arr)) {
@@ -23,15 +28,60 @@ export function loadUnsavedFileIds(): Set<string> {
 
 export function saveUnsavedFileIds(ids: Set<string>): void {
   try {
-    localStorage.setItem(UNSAVED_IDS_KEY, JSON.stringify(Array.from(ids)));
+    localStorage.setItem(storageKey(UNSAVED_IDS_KEY), JSON.stringify(Array.from(ids)));
   } catch (err) {
     console.error('Failed to save unsaved file ids:', err);
   }
 }
 
+export function loadPendingDeletions(): PendingDriveDeletion[] {
+  try {
+    const raw = localStorage.getItem(storageKey(PENDING_DELETIONS_KEY));
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr;
+    }
+  } catch (err) {
+    console.error('Failed to load pending Drive deletions:', err);
+  }
+  return [];
+}
+
+export function savePendingDeletions(items: PendingDriveDeletion[]): void {
+  try {
+    if (items.length === 0) {
+      localStorage.removeItem(storageKey(PENDING_DELETIONS_KEY));
+    } else {
+      localStorage.setItem(storageKey(PENDING_DELETIONS_KEY), JSON.stringify(items));
+    }
+  } catch (err) {
+    console.error('Failed to save pending Drive deletions:', err);
+  }
+}
+
+export function loadBypassedAuth(): boolean {
+  try {
+    return localStorage.getItem(storageKey(BYPASSED_AUTH_KEY)) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function saveBypassedAuth(bypassed: boolean): void {
+  try {
+    if (bypassed) {
+      localStorage.setItem(storageKey(BYPASSED_AUTH_KEY), 'true');
+    } else {
+      localStorage.removeItem(storageKey(BYPASSED_AUTH_KEY));
+    }
+  } catch {
+    // ignore
+  }
+}
+
 export function loadVaultFiles(): VaultFile[] {
   try {
-    const raw = localStorage.getItem(VAULT_STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey(VAULT_STORAGE_KEY));
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -48,10 +98,55 @@ export function loadVaultFiles(): VaultFile[] {
 }
 
 export function saveVaultFiles(files: VaultFile[]): void {
+  cancelScheduledVaultSave();
   try {
-    localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(files));
+    localStorage.setItem(storageKey(VAULT_STORAGE_KEY), JSON.stringify(files));
   } catch (err) {
     console.error('Failed to save vault files to localStorage:', err);
+  }
+}
+
+// Debounced vault backup: serializing the whole vault on every keystroke is expensive.
+let pendingVaultSave: VaultFile[] | null = null;
+let vaultSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function scheduleSaveVaultFiles(files: VaultFile[], delayMs = VAULT_SAVE_DEBOUNCE_MS): void {
+  pendingVaultSave = files;
+  if (vaultSaveTimer) clearTimeout(vaultSaveTimer);
+  vaultSaveTimer = setTimeout(flushScheduledVaultSave, delayMs);
+}
+
+/** Immediately writes any debounced vault backup (e.g. on page hide or Ctrl/Cmd+S). */
+export function flushScheduledVaultSave(): void {
+  const files = pendingVaultSave;
+  if (files) saveVaultFiles(files);
+}
+
+export function cancelScheduledVaultSave(): void {
+  if (vaultSaveTimer) clearTimeout(vaultSaveTimer);
+  vaultSaveTimer = null;
+  pendingVaultSave = null;
+}
+
+/** Removes the cached vault so the next load starts from the starter templates. */
+export function clearVaultCache(): void {
+  cancelScheduledVaultSave();
+  try {
+    localStorage.removeItem(storageKey(VAULT_STORAGE_KEY));
+  } catch {
+    // ignore
+  }
+}
+
+/** Clears every piece of locally cached vault state (used on sign-out). */
+export function clearAllVaultStorage(): void {
+  clearVaultCache();
+  try {
+    localStorage.removeItem(storageKey(UNSAVED_IDS_KEY));
+    localStorage.removeItem(storageKey(PENDING_DELETIONS_KEY));
+    localStorage.removeItem(storageKey(BYPASSED_AUTH_KEY));
+  } catch {
+    // ignore
   }
 }
 
