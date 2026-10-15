@@ -1,8 +1,0 @@
-{
-  "name": "Markdown Life & Skills Vault",
-  "description": "Manage a structured system of markdown files to organize goals, projects, and agent skills.",
-  "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}
