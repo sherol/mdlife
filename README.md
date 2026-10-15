@@ -1,149 +1,180 @@
-# Markdown Life & Skills Vault 🗂️
+# mdlife – Markdown Life & Skills Vault
 
-A modern, markdown-first personal operating system and agent skills repository that directly integrates with your **Google Drive** as its storage layer.
+A markdown-first personal operating system and agent-skills repository that uses your **Google Drive** as its storage layer.
 
-Manage your goals, projects, agent skill templates, and interconnected notes in an elegant, distraction-free environment — accessible anywhere with zero proprietary lock-in.
+Manage goals, projects, agent skill templates, and interconnected notes in a distraction-free editor, with no proprietary lock-in.
 
-Example: http://sherol.github.io/mdlife
+Live: https://sherol.github.io/mdlife (offline demo without Google login: https://sherol.github.io/mdlife/mock.html)
 
 ---
 
-## ✨ Features
+## Features
 
-- **Google Drive Storage**: Uses your personal Google Drive (`/Markdown Life Vault/`) as the authoritative storage backend. No proprietary database or cloud lock-in.
-- **Bi-Directional Drive Sync**:
-  - Automatically debounce-syncs edits in real-time.
-  - Creates, renames, duplicates, and deletes files directly within your Google Drive hierarchy.
-  - One-click "Refresh from Drive" and "Initialize Starter Templates".
-- **File Management & Renaming**:
-  - Rename `.md` files right in the sidebar or directly inside the editor pane.
-  - Automatically updates any `[[wiki-links]]` referencing the renamed file across the entire vault.
-- **Structured Life Matrix**:
-  - Connect **Goals** 🎯 to **Projects** 🚀, **Agent Skills** 🤖, and **Notes** 📝 with YAML frontmatter metadata and `[[wiki-links]]`.
-  - Visual status chips, priority tracking, target quarters, and task completion metrics.
+- **Google Drive storage**: Your personal Google Drive (`/Markdown Life Vault/`) is the authoritative storage backend. No proprietary database.
+- **Drive sync**:
+  - Edits are auto-saved to Drive (debounced) and backed up to browser `localStorage` so unsaved work is never lost.
+  - Create, rename, and delete files directly within your Drive folder hierarchy.
+  - Reload from Drive and initialize the starter templates on demand.
+  - Share a project folder with another Google account.
+- **File management & renaming**:
+  - Rename `.md` files from the sidebar or the editor pane.
+  - `[[wiki-links]]` referencing a renamed file are updated across the vault.
+- **Life Matrix**:
+  - Connect **Goals** to **Projects**, **Agent Skills**, and **Notes** with YAML frontmatter and `[[wiki-links]]`.
+  - Status chips, priority, target dates, and task-completion progress.
 - **Agent Skills Lab**:
-  - Standardized Markdown specs for LLM agent prompts with frontmatter parameters (`role`, `model`, `inputs`).
-  - Interactive **Skill Playground** to test prompts and fill parameters on the fly.
-- **Split Markdown Editor & Preview**:
-  - Interactive checklists (click checkboxes in preview to update markdown source).
-  - Code syntax highlighting, tables, callout blocks, and frontmatter badge viewer.
-- **Import / Export**:
-  - Drag-and-drop local `.md` files to upload into your vault.
-  - Download entire vault as an organized `.zip` file anytime.
-- **GitHub Pages Ready**: Fully configured GitHub Actions workflow (`.github/workflows/deploy.yml`) for 100% free hosting on GitHub Pages.
+  - Markdown specs for LLM agent prompts with frontmatter parameters.
+  - **Skill Playground** fills in `{{variables}}` and assembles the final prompt for you to copy into the LLM of your choice (it does not call a model itself).
+- **Markdown editor & preview**:
+  - Interactive checklists (click a checkbox in the preview to update the source).
+  - GitHub-flavored markdown (tables, task lists, strikethrough), code blocks, blockquotes, and a frontmatter badge viewer.
+- **Import / export**:
+  - Drag and drop local `.md` files into the sidebar to import them.
+  - Download the entire vault as a `.zip` file.
+- **GitHub Pages ready**: GitHub Actions workflow (`.github/workflows/deploy.yml`) builds and publishes the static site.
+
+### Keyboard shortcuts
+
+| Shortcut           | Action                       |
+| ------------------ | ---------------------------- |
+| `Ctrl+S` / `Cmd+S` | Save the current file        |
+| `Ctrl+K` / `Cmd+K` | Open the quick file switcher |
 
 ---
 
-## 📁 Vault Directory Structure
+## Vault directory structure
 
-When synced to Google Drive or exported as a ZIP, files are organized into standard folders:
+The starter vault (`src/data/initialVault.ts`) is organized like this, both in Google Drive and in ZIP exports:
 
 ```text
 Markdown Life Vault/
 ├── goals/
-│   ├── annual-strategic-goals.md
-│   └── health-and-endurance.md
+│   ├── ai-systems-mastery.md
+│   ├── endurance-vitality.md
+│   └── financial-independence-engine.md
 ├── projects/
-│   ├── ai-agent-knowledge-vault.md
-│   └── personal-infrastructure.md
+│   ├── autonomous-research-agent/
+│   │   └── autonomous-research-agent.md
+│   ├── half-marathon-sub-1h45/
+│   │   └── half-marathon-sub-1h45.md
+│   └── second-brain-pkm/
+│       └── second-brain-pkm.md
 ├── skills/
 │   ├── research-synthesizer.md
-│   └── code-refactoring-agent.md
-└── notes/
-    └── weekly-operating-cadence.md
+│   ├── code-architect.md
+│   ├── deep-work-planner.md
+│   └── prompt-evaluator.md
+├── notes/
+│   └── weekly-review-protocol.md
+└── archive/
+    └── 2025/
+        └── 2025-annual-retrospective.md
 ```
 
-### File Specification Example
-Each markdown file utilizes standard YAML frontmatter:
+### File format example
+
+Each markdown file uses YAML frontmatter:
+
 ```markdown
 ---
-title: AI Agent Knowledge Vault
+title: Autonomous Research Agent Engine
 category: projects
-status: active
+status: in-progress
 priority: high
-tags: [ai, productivity, oss]
-relatedGoals: ["annual-strategic-goals"]
+target_date: 2026-10-30
+goal_id: ai-systems-mastery.md
+tags:
+  - agents
+  - automation
+assigned_skills:
+  - research-synthesizer.md
 ---
 
-# 🚀 Project: AI Agent Knowledge Vault
-- [x] Integrate Google Drive API sync
-- [ ] Deploy to GitHub Pages
+# Autonomous Research Agent Engine
+
+Parent Goal: [[ai-systems-mastery.md]]
+
+- [x] Define Markdown input/output schemas for agent report format
+- [ ] Add claim extraction and verification step
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## Tech stack
 
-- **Framework**: React 18 + Vite
+- **Framework**: React 19 + Vite 8
 - **Language**: TypeScript
-- **Styling**: Tailwind CSS
+- **Styling**: Tailwind CSS v4 (`@tailwindcss/vite`)
+- **Markdown rendering**: `react-markdown` + `remark-gfm` (frontmatter is parsed by a small built-in parser)
 - **Authentication**: Firebase Authentication (Google Sign-In)
-- **Cloud Storage**: Google Drive REST API v3 (`https://www.googleapis.com/auth/drive.file`)
+- **Cloud storage**: Google Drive REST API v3 (`https://www.googleapis.com/auth/drive.file`)
+- **ZIP export**: JSZip
 - **Icons**: Lucide React
-- **Markdown Tools**: `marked`, `js-yaml`, `jszip`
+- **Tooling**: ESLint (typescript-eslint, react-hooks), Prettier, Vitest
 
 ---
 
-## 🚀 Getting Started
+## Getting started
 
 ### Prerequisites
-- Node.js 18+ or 20+
-- npm, pnpm, or bun
 
-### Local Development
+- Node.js 22+
+- npm (the lockfile is `package-lock.json`; CI uses `npm ci`)
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/<your-username>/<your-repo-name>.git
-   cd <your-repo-name>
-   ```
+### Local development
 
-2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
+```bash
+git clone https://github.com/sherol/mdlife.git
+cd mdlife
+npm install
+npm run dev
+```
 
-3. **Start the development server**:
-   ```bash
-   npm run dev
-   ```
-   Open [http://localhost:3000](http://localhost:3000) (or the port shown in your terminal).
+Open [http://localhost:3000](http://localhost:3000). Open `/mock.html` to explore with sample files without signing in.
 
-4. **Build for production**:
-   ```bash
-   npm run build
-   ```
+### Scripts
+
+| Script              | Description                            |
+| ------------------- | -------------------------------------- |
+| `npm run dev`       | Start the Vite dev server on port 3000 |
+| `npm run build`     | Build the static site into `dist/`     |
+| `npm run preview`   | Preview the production build locally   |
+| `npm run typecheck` | Type-check with `tsc --noEmit`         |
+| `npm run lint`      | Lint with ESLint                       |
+| `npm run format`    | Format files with Prettier             |
+| `npm test`          | Run unit tests with Vitest             |
+| `npm run clean`     | Remove `dist/`                         |
 
 ---
 
-## 🌐 Deploying to GitHub Pages
+## Deploying to GitHub Pages
 
-This repository includes an automated workflow in `.github/workflows/deploy.yml`.
+`.github/workflows/deploy.yml` type-checks, lints, tests, builds, and deploys on every push to `main` (or `master`). `.github/workflows/ci.yml` runs the same checks on pull requests and other branches.
 
 ### Step 1: Enable GitHub Actions for Pages
+
 1. Go to your repository on GitHub.
 2. Navigate to **Settings** → **Pages**.
 3. Under **Build and deployment** → **Source**, select **GitHub Actions**.
-4. Every push to the `main` (or `master`) branch will automatically build and publish the app!
 
-### Step 2: Configure Google OAuth / Firebase for your GitHub Pages Domain
+### Step 2: Configure Google OAuth / Firebase for your GitHub Pages domain
+
 To enable Google Sign-In on your published GitHub Pages URL (e.g. `https://<your-username>.github.io`):
+
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/) or [Firebase Console](https://console.firebase.google.com/).
-2. In **Firebase Authentication** → **Settings** → **Authorized domains**:
-   - Add `<your-username>.github.io`.
-3. In **Google Cloud Console** → **APIs & Services** → **Credentials** → Your Web OAuth Client:
-   - Add `https://<your-username>.github.io` under **Authorized JavaScript origins**.
+2. In **Firebase Authentication** → **Settings** → **Authorized domains**, add `<your-username>.github.io`.
+3. In **Google Cloud Console** → **APIs & Services** → **Credentials** → your Web OAuth client, add `https://<your-username>.github.io` under **Authorized JavaScript origins**.
 
 ---
 
-## 🔒 Privacy & Permissions
+## Privacy & permissions
 
-- The application requests the minimal Google Drive scope: `https://www.googleapis.com/auth/drive.file`.
-- This scope restricts the application to **only reading and writing files created by this application** inside the `/Markdown Life Vault/` folder. It cannot access your existing photos, personal documents, or other Drive folders.
-- No personal data or vault contents are stored on any external server. All API communication occurs directly between your browser and Google APIs.
+- The app requests the minimal Google Drive scope: `https://www.googleapis.com/auth/drive.file`.
+- This scope restricts the app to **only the files it created** (inside `/Markdown Life Vault/`). It cannot access your other Drive files.
+- No vault contents are stored on any external server. All API calls go directly from your browser to Google APIs.
 
 ---
 
-## 📄 License
+## License
 
-Apache-2.0. Feel free to fork and customize for your own workflow!
+Apache-2.0. Feel free to fork and customize for your own workflow.
