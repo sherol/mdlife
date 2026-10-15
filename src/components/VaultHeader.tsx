@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   FolderArchive,
   Plus,
@@ -12,18 +12,15 @@ import {
   CheckCircle2,
   Sparkles,
   HardDrive,
-  CloudCheck,
   CloudUpload,
   AlertCircle,
-  AlertTriangle,
-  X,
-  ExternalLink,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { VaultFile, ActiveTab, DriveConnectionStatus } from '../types';
 import { exportVaultAsZip } from '../utils/storage';
 import { getTaskProgress } from '../utils/markdownParser';
 import { SQUIRREL_FAVICON_DATA_URI } from '../utils/favicon';
+import { isArchiveFile, isGoalFile, isProjectFile, isSkillFile } from '../utils/fileKinds';
 
 interface VaultHeaderProps {
   files: VaultFile[];
@@ -38,10 +35,8 @@ interface VaultHeaderProps {
   driveStatus?: DriveConnectionStatus;
   unsavedFilesCount?: number;
   onOpenDriveModal: () => void;
-  onRefreshDrive?: () => void;
   onReconnectDrive?: () => void;
   onSyncAllUnsaved?: () => void;
-  onTestConnection?: () => void;
   isRefreshingDrive?: boolean;
   isMockMode?: boolean;
 }
@@ -59,38 +54,33 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
   driveStatus = 'disconnected',
   unsavedFilesCount = 0,
   onOpenDriveModal,
-  onRefreshDrive,
   onReconnectDrive,
   onSyncAllUnsaved,
-  onTestConnection,
   isRefreshingDrive = false,
   isMockMode = false,
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const [showFaviconModal, setShowFaviconModal] = React.useState(false);
 
-  // Compute vault stats
-  const goalsCount = files.filter(
-    (f) => f.folder === 'goals' || f.folder.startsWith('goals/') || f.frontmatter.category === 'goals'
-  ).length;
-  const projectsCount = files.filter(
-    (f) => f.folder === 'projects' || f.folder.startsWith('projects/') || f.frontmatter.category === 'projects'
-  ).length;
-  const skillsCount = files.filter(
-    (f) => f.folder === 'skills' || f.folder.startsWith('skills/') || f.frontmatter.category === 'skills'
-  ).length;
-  const archiveCount = files.filter(
-    (f) => f.folder === 'archive' || f.folder.startsWith('archive/') || f.frontmatter.category === 'archive'
-  ).length;
-
-  let totalTasks = 0;
-  let completedTasks = 0;
-  for (const f of files) {
-    const progress = getTaskProgress(f.content);
-    totalTasks += progress.total;
-    completedTasks += progress.completed;
-  }
-  const taskPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  // Compute vault stats (task parsing touches every file, so only recompute when files change)
+  const { goalsCount, projectsCount, skillsCount, archiveCount, totalTasks, completedTasks, taskPct } =
+    useMemo(() => {
+      let totalTasks = 0;
+      let completedTasks = 0;
+      for (const f of files) {
+        const progress = getTaskProgress(f.content);
+        totalTasks += progress.total;
+        completedTasks += progress.completed;
+      }
+      return {
+        goalsCount: files.filter(isGoalFile).length,
+        projectsCount: files.filter(isProjectFile).length,
+        skillsCount: files.filter(isSkillFile).length,
+        archiveCount: files.filter(isArchiveFile).length,
+        totalTasks,
+        completedTasks,
+        taskPct: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+      };
+    }, [files]);
 
   const handleExportZip = async () => {
     try {
@@ -117,18 +107,9 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         {/* Brand & Stats */}
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setShowFaviconModal(true)}
-            title="Click to view the Squirrel .md Favicon & Brand Icon"
-            className="w-10 h-10 rounded-xl overflow-hidden shadow-xs border border-stone-800 bg-[#111827] flex items-center justify-center shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-500/50 transition-all p-0.5 group"
-          >
-            <img
-              src={SQUIRREL_FAVICON_DATA_URI}
-              alt="Squirrel .md Favicon"
-              className="w-full h-full object-contain group-hover:scale-105 transition-transform"
-            />
-          </button>
+          <div className="w-10 h-10 rounded-xl overflow-hidden shadow-xs border border-stone-800 bg-[#111827] flex items-center justify-center shrink-0 p-0.5">
+            <img src={SQUIRREL_FAVICON_DATA_URI} alt="" aria-hidden="true" className="w-full h-full object-contain" />
+          </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-semibold text-stone-900 tracking-tight">
@@ -357,6 +338,7 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
             id="btn-reset-vault"
             onClick={onResetVault}
             title="Reload initial template vault"
+            aria-label="Reload initial template vault"
             className="p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -373,123 +355,6 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
           </button>
         </div>
       </div>
-
-      {/* Favicon & Icon Showcase Modal */}
-      {showFaviconModal && (
-        <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="rounded-2xl border shadow-2xl max-w-lg w-full p-6 space-y-5 bg-white border-stone-200 text-stone-900">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-[#111827] p-1 flex items-center justify-center shadow-xs">
-                  <img src={SQUIRREL_FAVICON_DATA_URI} alt="Favicon" className="w-full h-full object-contain" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-stone-900">Vault Favicon & Squirrel Mascot</h3>
-                  <p className="text-[11px] text-stone-500">Stylized squirrel with stamped .md imprint</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowFaviconModal(false)}
-                className="p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Large High-Res Preview */}
-            <div className="flex flex-col items-center justify-center p-6 bg-stone-100/70 rounded-2xl border border-stone-200/80">
-              <div className="w-44 h-44 rounded-3xl overflow-hidden shadow-xl border-2 border-stone-800 bg-[#111827] p-2 flex items-center justify-center">
-                <img
-                  src={SQUIRREL_FAVICON_DATA_URI}
-                  alt="High Resolution Squirrel Favicon"
-                  className="w-full h-full object-contain"
-                />
-              </div>
-              <span className="mt-3 text-xs font-semibold text-stone-700">
-                Vector SVG (Scalable to any size)
-              </span>
-              <span className="text-[11px] text-stone-400 font-mono">
-                512 x 512 px master canvas
-              </span>
-            </div>
-
-            {/* Standard Browser Favicon Scales Preview */}
-            <div>
-              <div className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-2.5">
-                Favicon Resolution Previews:
-              </div>
-              <div className="grid grid-cols-4 gap-2.5">
-                {/* 64px */}
-                <div className="flex flex-col items-center p-2.5 bg-stone-50 rounded-xl border border-stone-200 text-center">
-                  <div className="w-16 h-16 rounded-xl overflow-hidden shadow-xs bg-[#111827] p-1 mb-1.5">
-                    <img src={SQUIRREL_FAVICON_DATA_URI} alt="64px" className="w-full h-full object-contain" />
-                  </div>
-                  <span className="text-[10px] font-bold text-stone-700">64 x 64</span>
-                  <span className="text-[9px] text-stone-400">PWA / App</span>
-                </div>
-                {/* 32px */}
-                <div className="flex flex-col items-center p-2.5 bg-stone-50 rounded-xl border border-stone-200 text-center">
-                  <div className="w-8 h-8 rounded-lg overflow-hidden shadow-xs bg-[#111827] p-0.5 mb-1.5">
-                    <img src={SQUIRREL_FAVICON_DATA_URI} alt="32px" className="w-full h-full object-contain" />
-                  </div>
-                  <span className="text-[10px] font-bold text-stone-700">32 x 32</span>
-                  <span className="text-[9px] text-stone-400">Retina Tab</span>
-                </div>
-                {/* 24px */}
-                <div className="flex flex-col items-center p-2.5 bg-stone-50 rounded-xl border border-stone-200 text-center">
-                  <div className="w-6 h-6 rounded-md overflow-hidden shadow-xs bg-[#111827] p-0.5 mb-1.5">
-                    <img src={SQUIRREL_FAVICON_DATA_URI} alt="24px" className="w-full h-full object-contain" />
-                  </div>
-                  <span className="text-[10px] font-bold text-stone-700">24 x 24</span>
-                  <span className="text-[9px] text-stone-400">Toolbar</span>
-                </div>
-                {/* 16px */}
-                <div className="flex flex-col items-center p-2.5 bg-stone-50 rounded-xl border border-stone-200 text-center">
-                  <div className="w-4 h-4 rounded-xs overflow-hidden shadow-2xs bg-[#111827] mb-1.5">
-                    <img src={SQUIRREL_FAVICON_DATA_URI} alt="16px" className="w-full h-full object-contain" />
-                  </div>
-                  <span className="text-[10px] font-bold text-stone-700">16 x 16</span>
-                  <span className="text-[9px] text-stone-400">Standard Tab</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Design Specifications */}
-            <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/80 text-xs text-stone-600 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-stone-700">Mascot:</span>
-                <span className="font-mono text-stone-600">Pure White Silhouette Squirrel in Profile</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-stone-700">Imprint:</span>
-                <span className="font-mono text-stone-900 font-bold">md (Bold black cutout on body)</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-stone-700">Background:</span>
-                <span className="font-mono text-stone-600">#000000 (Pure Black Frame)</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-2 border-t border-stone-100">
-              <a
-                href={SQUIRREL_FAVICON_DATA_URI}
-                download="favicon.svg"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-300 text-stone-700 hover:bg-stone-100 text-xs font-medium cursor-pointer"
-              >
-                <span>Download SVG</span>
-              </a>
-              <button
-                type="button"
-                onClick={() => setShowFaviconModal(false)}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-stone-900 hover:bg-stone-800 shadow-xs cursor-pointer"
-              >
-                Close Preview
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </header>
   );
 };

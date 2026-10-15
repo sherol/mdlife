@@ -1,41 +1,46 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Target,
   Rocket,
   Bot,
-  CheckCircle,
-  ArrowRight,
   Plus,
-  Zap,
   Calendar,
   Layers,
   ChevronRight,
 } from 'lucide-react';
 import { VaultFile } from '../types';
 import { getTaskProgress } from '../utils/markdownParser';
+import { isGoalFile, isProjectFile, isSkillFile } from '../utils/fileKinds';
 
 interface LifeMatrixViewProps {
   files: VaultFile[];
   onSelectFile: (id: string) => void;
-  onOpenSkillPlayground: (file: VaultFile) => void;
   onQuickNewFileInFolder: (folder: string) => void;
 }
+
+/** Keyboard activation (Enter / Space) for non-button elements acting as buttons. */
+const activateOnKey = (action: () => void) => (e: React.KeyboardEvent) => {
+  if (e.target !== e.currentTarget) return;
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    action();
+  }
+};
 
 export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
   files,
   onSelectFile,
-  onOpenSkillPlayground,
   onQuickNewFileInFolder,
 }) => {
-  const goals = files.filter(
-    (f) => f.folder === 'goals' || f.folder.startsWith('goals/') || f.frontmatter.category === 'goals'
-  );
-  const projects = files.filter(
-    (f) => f.folder === 'projects' || f.folder.startsWith('projects/') || f.frontmatter.category === 'projects'
-  );
-  const skills = files.filter(
-    (f) => f.folder === 'skills' || f.folder.startsWith('skills/') || f.frontmatter.category === 'skills'
-  );
+  const { goals, projects, skills, progressById } = useMemo(() => {
+    const goals = files.filter(isGoalFile);
+    const projects = files.filter(isProjectFile);
+    const skills = files.filter(isSkillFile);
+    const progressById = new Map(
+      [...goals, ...projects].map((f) => [f.id, getTaskProgress(f.content)] as const)
+    );
+    return { goals, projects, skills, progressById };
+  }, [files]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-stone-50/50 p-6 md:p-8">
@@ -89,7 +94,7 @@ export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
 
           <div className="grid grid-cols-1 gap-6">
             {goals.map((goal) => {
-              const goalProgress = getTaskProgress(goal.content);
+              const goalProgress = progressById.get(goal.id) ?? getTaskProgress(goal.content);
               const linkedProjects = projects.filter((p) => {
                 const goalFilename = goal.name;
                 const matchesGoalId = p.frontmatter.goal_id === goalFilename || p.frontmatter.goal_id === goal.path;
@@ -122,12 +127,15 @@ export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
                           </span>
                         )}
                       </div>
-                      <h4
-                        onClick={() => onSelectFile(goal.id)}
-                        className="text-lg font-bold text-stone-900 hover:text-blue-600 cursor-pointer flex items-center gap-1.5"
-                      >
-                        {goal.frontmatter.title || goal.name}
-                        <ChevronRight className="w-4 h-4 text-stone-400" />
+                      <h4>
+                        <button
+                          type="button"
+                          onClick={() => onSelectFile(goal.id)}
+                          className="text-lg font-bold text-stone-900 hover:text-blue-600 cursor-pointer flex items-center gap-1.5 text-left"
+                        >
+                          {goal.frontmatter.title || goal.name}
+                          <ChevronRight className="w-4 h-4 text-stone-400" />
+                        </button>
                       </h4>
                       <p className="text-xs text-stone-500 font-mono">/{goal.path}</p>
                     </div>
@@ -170,7 +178,8 @@ export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {linkedProjects.map((project) => {
-                          const projectProgress = getTaskProgress(project.content);
+                          const projectProgress =
+                            progressById.get(project.id) ?? getTaskProgress(project.content);
                           // Determine assigned skills
                           const assignedSkills = skills.filter((s) => {
                             const inFrontmatter = project.frontmatter.assigned_skills?.includes(s.name);
@@ -183,8 +192,12 @@ export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
                           return (
                             <div
                               key={project.id}
+                              role="button"
+                              tabIndex={0}
+                              aria-label={`Open project ${project.frontmatter.title || project.name}`}
                               onClick={() => onSelectFile(project.id)}
-                              className="p-4 rounded-xl border border-stone-200 bg-stone-50/40 hover:bg-white hover:border-stone-300 hover:shadow-xs transition-all cursor-pointer flex flex-col justify-between group"
+                              onKeyDown={activateOnKey(() => onSelectFile(project.id))}
+                              className="p-4 rounded-xl border border-stone-200 bg-stone-50/40 hover:bg-white hover:border-stone-300 hover:shadow-xs focus-visible:outline-2 focus-visible:outline-blue-500 transition-all cursor-pointer flex flex-col justify-between group"
                             >
                               <div>
                                 <div className="flex items-center justify-between gap-2 mb-2">
@@ -236,17 +249,19 @@ export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
                                 {assignedSkills.length > 0 ? (
                                   <div className="flex flex-wrap gap-1">
                                     {assignedSkills.map((s) => (
-                                      <span
+                                      <button
+                                        type="button"
                                         key={s.id}
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           onSelectFile(s.id);
                                         }}
-                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-mono"
+                                        onKeyDown={(e) => e.stopPropagation()}
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-mono cursor-pointer"
                                       >
                                         <Bot className="w-2.5 h-2.5" />
                                         @{s.name.replace(/\.md$/, '')}
-                                      </span>
+                                      </button>
                                     ))}
                                   </div>
                                 ) : (
@@ -280,8 +295,12 @@ export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
                 .map((project) => (
                   <div
                     key={project.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open project ${project.frontmatter.title || project.name}`}
                     onClick={() => onSelectFile(project.id)}
-                    className="p-4 rounded-xl border border-stone-200 bg-white hover:border-stone-300 transition-all cursor-pointer"
+                    onKeyDown={activateOnKey(() => onSelectFile(project.id))}
+                    className="p-4 rounded-xl border border-stone-200 bg-white hover:border-stone-300 focus-visible:outline-2 focus-visible:outline-blue-500 transition-all cursor-pointer"
                   >
                     <h5 className="font-semibold text-stone-900 text-sm mb-1">
                       {project.frontmatter.title || project.name}

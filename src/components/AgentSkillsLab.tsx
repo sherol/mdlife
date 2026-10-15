@@ -1,19 +1,7 @@
-import React, { useState } from 'react';
-import {
-  Bot,
-  Sparkles,
-  Zap,
-  Play,
-  Copy,
-  Check,
-  Edit3,
-  Plus,
-  Layers,
-  ArrowRight,
-  Code2,
-  Cpu,
-} from 'lucide-react';
+import React from 'react';
+import { Bot, Sparkles, Zap, Edit3, Plus, Cpu } from 'lucide-react';
 import { VaultFile } from '../types';
+import { isProjectFile, isSkillFile } from '../utils/fileKinds';
 
 interface AgentSkillsLabProps {
   files: VaultFile[];
@@ -30,27 +18,8 @@ export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
   onQuickNewFileInFolder,
   onLoadStarterSkills,
 }) => {
-  const skills = files.filter((f) => {
-    const folderLower = (f.folder || '').toLowerCase();
-    const catLower = (f.frontmatter.category || '').toLowerCase();
-    const nameLower = (f.name || '').toLowerCase();
-    return (
-      folderLower === 'skills' ||
-      folderLower.startsWith('skills/') ||
-      folderLower.includes('skill') ||
-      catLower === 'skills' ||
-      nameLower.includes('skill')
-    );
-  });
-  const projects = files.filter((f) => {
-    const folderLower = (f.folder || '').toLowerCase();
-    const catLower = (f.frontmatter.category || '').toLowerCase();
-    return (
-      folderLower === 'projects' ||
-      folderLower.startsWith('projects/') ||
-      catLower === 'projects'
-    );
-  });
+  const skills = files.filter(isSkillFile);
+  const projects = files.filter(isProjectFile);
 
   return (
     <div className="flex-1 overflow-y-auto bg-stone-50/50 p-6 md:p-8">
@@ -130,7 +99,7 @@ export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {skills.map((skill) => {
-            const { frontmatter, content } = skill;
+            const { frontmatter } = skill;
             const role = frontmatter.role || 'Autonomous Assistant';
             const model = frontmatter.model || 'gemini-2.5-flash';
             const inputs = frontmatter.inputs || [];
@@ -164,11 +133,14 @@ export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
                   </div>
 
                   {/* Title & Role */}
-                  <h3
-                    onClick={() => onSelectFile(skill.id)}
-                    className="font-bold text-stone-900 hover:text-emerald-700 text-base mb-1 cursor-pointer transition-colors"
-                  >
-                    {frontmatter.title || skill.name}
+                  <h3 className="font-bold text-stone-900 hover:text-emerald-700 text-base mb-1 transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => onSelectFile(skill.id)}
+                      className="text-left cursor-pointer"
+                    >
+                      {frontmatter.title || skill.name}
+                    </button>
                   </h3>
                   <p className="text-xs text-stone-600 font-medium mb-3 flex items-center gap-1">
                     <Sparkles className="w-3 h-3 text-amber-500 shrink-0" />
@@ -202,14 +174,15 @@ export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
                     {consumingProjects.length > 0 ? (
                       <div className="space-y-1">
                         {consumingProjects.map((p) => (
-                          <div
+                          <button
+                            type="button"
                             key={p.id}
                             onClick={() => onSelectFile(p.id)}
-                            className="text-xs text-stone-600 hover:text-blue-600 cursor-pointer flex items-center gap-1 truncate"
+                            className="w-full text-left text-xs text-stone-600 hover:text-blue-600 cursor-pointer flex items-center gap-1 truncate"
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
                             <span className="truncate">{p.frontmatter.title || p.name}</span>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     ) : (
@@ -237,7 +210,7 @@ export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
                     className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white shadow-xs transition-colors"
                   >
                     <Zap className="w-3.5 h-3.5 text-amber-400" />
-                    Test Skill
+                    Assemble Prompt
                   </button>
                 </div>
               </div>
