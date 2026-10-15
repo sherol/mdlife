@@ -182,7 +182,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     // It fires a regular input event, which flows through onChange.
     textarea.focus();
     textarea.setSelectionRange(start, end);
-    let inserted = false;
+    let inserted: boolean;
     try {
       inserted =
         typeof document.execCommand === 'function' && document.execCommand('insertText', false, replacement);

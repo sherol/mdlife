@@ -35,9 +35,6 @@ jobs:
 
       - name: Lint
         run: npm run lint
-        # TODO: remove once the existing lint errors in src/ are fixed
-        # (unused vars, react-hooks compiler rules, empty catch blocks).
-        continue-on-error: true
 
       - name: Test
         run: npm test

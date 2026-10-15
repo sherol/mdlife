@@ -82,26 +82,6 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
   const canShare = isConnected || isMockMode;
   const titleId = useId();
 
-  // Load share permissions when modal opens
-  useEffect(() => {
-    if (!isOpen) {
-      setShareInfo(null);
-      setError(null);
-      setStatusMessage(null);
-      setEmailInput('');
-      return;
-    }
-
-    if (isConnected) {
-      loadDriveShareInfo();
-    } else if (isMockMode) {
-      // Offline mock build (mock.html): simulated permissions kept in localStorage
-      loadMockShareInfo();
-    } else {
-      setShareInfo(null);
-    }
-  }, [isOpen, projectFolder, isConnected, isMockMode]);
-
   const loadDriveShareInfo = async () => {
     setIsLoading(true);
     setError(null);
@@ -137,6 +117,26 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
       setIsLoading(false);
     }
   };
+
+  // Load share permissions when modal opens
+  useEffect(() => {
+    if (!isOpen) {
+      setShareInfo(null);
+      setError(null);
+      setStatusMessage(null);
+      setEmailInput('');
+      return;
+    }
+
+    if (isConnected) {
+      loadDriveShareInfo();
+    } else if (isMockMode) {
+      // Offline mock build (mock.html): simulated permissions kept in localStorage
+      loadMockShareInfo();
+    } else {
+      setShareInfo(null);
+    }
+  }, [isOpen, projectFolder, isConnected, isMockMode]);
 
   const handleShare = async (e: React.FormEvent) => {
     e.preventDefault();

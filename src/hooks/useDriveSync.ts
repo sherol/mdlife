@@ -301,7 +301,7 @@ export function useDriveSync({
   const drain = async () => {
     if (!canSync()) return;
     setIsDriveSyncing(true);
-    let auth: 'ok' | 'auth' = 'ok';
+    let auth: 'ok' | 'auth';
     try {
       auth = await processDeletions();
       while (auth === 'ok' && pendingSavesRef.current.size > 0 && canSync()) {
@@ -349,7 +349,7 @@ export function useDriveSync({
     if (!canSync()) return 'queued';
     await flushSaves([]);
     return pendingDeletionsRef.current.includes(entry) ? 'queued' : 'deleted';
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [flushSaves, setPendingDeletions]);
 
   /** Drops all queued saves, unsaved flags and pending deletions (Drive wins). */

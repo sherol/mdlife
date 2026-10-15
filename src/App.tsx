@@ -624,31 +624,6 @@ export default function App({ forceOffline = false }: AppProps) {
     }
   };
 
-  const handleTestDriveConnection = async () => {
-    setToastNotification({
-      type: 'info',
-      text: 'Verifying Google Drive connection and write authorization...',
-    });
-    try {
-      const result = await testDriveConnection();
-      if (result.ok) {
-        setToastNotification({
-          type: 'success',
-          text: `Google Drive connection verified! Active and ready to sync (${result.email || googleUser?.email || 'Authenticated'}).`,
-        });
-      } else {
-        setToastNotification({
-          type: 'error',
-          text: `Drive connection issue: ${result.error || 'Token expired'}. Please click Reconnect.`,
-        });
-      }
-    } catch (err: any) {
-      setToastNotification({
-        type: 'error',
-        text: `Error verifying connection: ${err?.message || 'Network error'}`,
-      });
-    }
-  };
 
   const handleSignOutGoogle = async () => {
     await logout(); // also clears the in-memory/session token
