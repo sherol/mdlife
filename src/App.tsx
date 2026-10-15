@@ -29,6 +29,7 @@ import { GoogleDriveSyncModal } from './components/GoogleDriveSyncModal';
 import { GoogleDriveStartScreen } from './components/GoogleDriveStartScreen';
 import { ReloadFromDriveModal } from './components/ReloadFromDriveModal';
 import { ShareProjectModal } from './components/ShareProjectModal';
+import { DeleteFileModal } from './components/DeleteFileModal';
 
 interface AppProps {
   forceOffline?: boolean;
@@ -57,6 +58,8 @@ export default function App({ forceOffline = false }: AppProps) {
   const [newFileInitialFolder, setNewFileInitialFolder] = useState<string>('goals');
   const [skillForPlayground, setSkillForPlayground] = useState<VaultFile | null>(null);
   const [sharingProjectFolder, setSharingProjectFolder] = useState<string | null>(null);
+  const [fileToDelete, setFileToDelete] = useState<VaultFile | null>(null);
+  const [isDeletingFile, setIsDeletingFile] = useState(false);
 
   // Google Drive & Auth State
   const [googleUser, setGoogleUser] = useState<User | null>(null);
@@ -208,12 +211,16 @@ export default function App({ forceOffline = false }: AppProps) {
       return;
     }
     const unsubscribe = initAuth(
-      (user) => {
+      (user, token) => {
         setGoogleUser(user);
         setHasBypassedAuth(false);
-        setDriveStatus('connected');
-        // Automatically load ONLY files that exist in Google Drive
-        fetchFilesFromDrive(false);
+        if (token) {
+          setDriveStatus('connected');
+          // Automatically load ONLY files that exist in Google Drive
+          fetchFilesFromDrive(false);
+        } else {
+          setDriveStatus('expired');
+        }
       },
       () => {
         setGoogleUser(null);
@@ -341,21 +348,40 @@ export default function App({ forceOffline = false }: AppProps) {
   // Currently active file object
   const currentFile = files.find((f) => f.id === selectedFileId) || files[0] || null;
 
-  // Auto-save edited file to Google Drive (debounced by 1.2s)
+  // Auto-save edited files to Google Drive (debounced by 1.2s)
   useEffect(() => {
-    if (!googleUser || !currentFile) return;
-    if (!unsavedFileIds.has(currentFile.id)) return;
+    if (!googleUser || unsavedFileIds.size === 0) return;
+    if (driveStatus !== 'connected') return;
 
     const timer = setTimeout(async () => {
+      const pendingFiles = files.filter((f) => unsavedFileIds.has(f.id));
+      if (pendingFiles.length === 0) return;
+
       try {
         setIsDriveSyncing(true);
-        await saveFileToDrive(currentFile);
-        // Successfully saved to Google Drive: remove from unsaved list
-        setUnsavedFileIds((prev) => {
-          const next = new Set(prev);
-          next.delete(currentFile.id);
-          return next;
-        });
+        for (const fileToSave of pendingFiles) {
+          try {
+            const res = await saveFileToDrive(fileToSave);
+            if (res.fileId && res.fileId !== fileToSave.driveFileId) {
+              setFiles((prev) => {
+                const next = prev.map((f) => (f.id === fileToSave.id ? { ...f, driveFileId: res.fileId } : f));
+                saveVaultFiles(next);
+                return next;
+              });
+            }
+            // Successfully saved to Google Drive: remove from unsaved list
+            setUnsavedFileIds((prev) => {
+              const next = new Set(prev);
+              next.delete(fileToSave.id);
+              return next;
+            });
+          } catch (fileErr: any) {
+            console.error(`Auto-save error for ${fileToSave.name}:`, fileErr);
+            if (fileErr?.message?.includes('401') || fileErr?.message?.includes('expired') || fileErr?.message?.includes('authenticated')) {
+              throw fileErr;
+            }
+          }
+        }
       } catch (err: any) {
         console.error('Auto-save to Google Drive error:', err);
         const isAuthErr =
@@ -367,12 +393,7 @@ export default function App({ forceOffline = false }: AppProps) {
           setDriveStatus('expired');
           setToastNotification({
             type: 'error',
-            text: 'Google Drive connection expired. Your edits are safely preserved locally in browser storage. Click Reconnect to sync.',
-          });
-        } else {
-          setToastNotification({
-            type: 'error',
-            text: `Drive auto-sync issue (${err?.message || 'network'}). Edits preserved locally.`,
+            text: 'Google Drive session expired. Your recent edits are safely preserved locally in browser storage. Click Reconnect to sync.',
           });
         }
       } finally {
@@ -381,7 +402,7 @@ export default function App({ forceOffline = false }: AppProps) {
     }, 1200);
 
     return () => clearTimeout(timer);
-  }, [currentFile?.content, googleUser, unsavedFileIds]);
+  }, [files, googleUser, unsavedFileIds, driveStatus]);
 
   // Handle content updates to current file
   const handleUpdateContent = (newContent: string) => {
@@ -493,34 +514,96 @@ export default function App({ forceOffline = false }: AppProps) {
     }
   };
 
-  // Delete file
-  const handleDeleteFile = async (id: string) => {
-    const fileToDelete = files.find((f) => f.id === id);
+  // Request to delete a file (opens modal dialog without window.confirm)
+  const handleDeleteFile = (id: string) => {
+    const target = files.find((f) => f.id === id);
+    if (!target) return;
+    setFileToDelete(target);
+  };
+
+  // Confirm and execute file deletion
+  const handleConfirmDeleteFile = async () => {
     if (!fileToDelete) return;
+    const target = fileToDelete;
+    setIsDeletingFile(true);
 
-    const confirmed = window.confirm(`Are you sure you want to delete "${fileToDelete.name}"?`);
-    if (!confirmed) return;
+    try {
+      // If connected to Google Drive, delete file and all its copies from Google Drive
+      if (googleUser && driveStatus !== 'disconnected') {
+        try {
+          await deleteFileFromDrive(target.folder, target.name, target.driveFileId);
+        } catch (err: any) {
+          console.error('Failed to delete file from Google Drive:', err);
+        }
+      }
 
-    if (googleUser) {
+      // Remove from local React state and update localStorage - clean up any copy with matching id or path
+      const nextFiles = files.filter(
+        (f) => f.id !== target.id && f.path !== target.path
+      );
+      saveVaultFiles(nextFiles);
+      setFiles(nextFiles);
+
+      // Clear from unsaved changes list
+      setUnsavedFileIds((prev) => {
+        const next = new Set(prev);
+        next.delete(target.id);
+        return next;
+      });
+
+      // Update active selection if deleted file was open
+      if (selectedFileId === target.id) {
+        setSelectedFileId(nextFiles[0]?.id || null);
+      }
+
+      setToastNotification({
+        type: 'info',
+        text: `Deleted "${target.name}"${googleUser ? ' from workspace and Google Drive' : ''}.`,
+      });
+    } catch (err: any) {
+      setToastNotification({
+        type: 'error',
+        text: `Error deleting file: ${err?.message}`,
+      });
+    } finally {
+      setIsDeletingFile(false);
+      setFileToDelete(null);
+    }
+  };
+
+  // Copy path of the file in Google Drive to clipboard (no duplicate creation!)
+  const handleCopyDrivePath = async (file: VaultFile) => {
+    const drivePath = `/Markdown Life Vault/${file.path}`;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(drivePath);
+      } else {
+        throw new Error('Clipboard API not available');
+      }
+      setToastNotification({
+        type: 'success',
+        text: `Copied Drive path: ${drivePath}`,
+      });
+    } catch {
       try {
-        await deleteFileFromDrive(fileToDelete.folder, fileToDelete.name, fileToDelete.driveFileId);
+        const textarea = document.createElement('textarea');
+        textarea.value = drivePath;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        setToastNotification({
+          type: 'success',
+          text: `Copied Drive path: ${drivePath}`,
+        });
+      } catch {
         setToastNotification({
           type: 'info',
-          text: `Deleted "${fileToDelete.name}" from Google Drive.`,
-        });
-      } catch (err: any) {
-        console.error('Failed to delete file from Google Drive:', err);
-        setToastNotification({
-          type: 'error',
-          text: `Failed to delete from Drive: ${err?.message}`,
+          text: `Drive path: ${drivePath}`,
         });
       }
-    }
-
-    setFiles((prev) => prev.filter((f) => f.id !== id));
-    if (selectedFileId === id) {
-      const remaining = files.filter((f) => f.id !== id);
-      setSelectedFileId(remaining[0]?.id || null);
     }
   };
 
@@ -641,37 +724,6 @@ export default function App({ forceOffline = false }: AppProps) {
     }
 
     return true;
-  };
-
-  // Duplicate file
-  const handleDuplicateFile = async (file: VaultFile) => {
-    const copyName = file.name.replace(/\.md$/, '') + '-copy.md';
-    const copyPath = `${file.folder}/${copyName}`;
-    const duplicate: VaultFile = {
-      ...file,
-      id: copyPath,
-      name: copyName,
-      path: copyPath,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    if (googleUser) {
-      try {
-        await saveFileToDrive(duplicate);
-        setFiles((prev) => [duplicate, ...prev]);
-        setSelectedFileId(duplicate.id);
-        setToastNotification({
-          type: 'success',
-          text: `Duplicated "${copyName}" in Google Drive.`,
-        });
-      } catch (err: any) {
-        console.error('Error duplicating file in Google Drive:', err);
-      }
-    } else {
-      setFiles((prev) => [duplicate, ...prev]);
-      setSelectedFileId(duplicate.id);
-    }
   };
 
   // Import markdown files
@@ -859,9 +911,11 @@ export default function App({ forceOffline = false }: AppProps) {
       const result = await saveFileToDrive(file);
 
       // Bind the driveFileId to the file in state and local cache
-      setFiles((prev) =>
-        prev.map((f) => (f.id === file.id ? { ...f, driveFileId: result.fileId } : f))
-      );
+      setFiles((prev) => {
+        const next = prev.map((f) => (f.id === file.id ? { ...f, driveFileId: result.fileId } : f));
+        saveVaultFiles(next);
+        return next;
+      });
 
       // Remove from unsaved local edits
       setUnsavedFileIds((prev) => {
@@ -884,11 +938,16 @@ export default function App({ forceOffline = false }: AppProps) {
         err?.message?.includes('authenticated');
       if (isAuthErr) {
         setDriveStatus('expired');
+        setToastNotification({
+          type: 'error',
+          text: 'Google Drive session expired. Click Reconnect to save your changes.',
+        });
+      } else {
+        setToastNotification({
+          type: 'error',
+          text: err?.message || `Failed to save ${file.name} to Google Drive`,
+        });
       }
-      setToastNotification({
-        type: 'error',
-        text: err?.message || `Failed to save ${file.name} to Google Drive`,
-      });
     } finally {
       setIsSavingSingleFileToDrive(false);
     }
@@ -940,6 +999,80 @@ export default function App({ forceOffline = false }: AppProps) {
       });
     } finally {
       setIsStartingSignIn(false);
+      setIsDriveSyncing(false);
+    }
+  };
+
+  // Immediate sync for all unsaved local files to Google Drive
+  const handleSyncAllUnsaved = async () => {
+    if (!googleUser) {
+      setIsDriveModalOpen(true);
+      return;
+    }
+    if (driveStatus === 'expired') {
+      await handleReconnectDrive();
+      return;
+    }
+
+    const pendingFiles = files.filter((f) => unsavedFileIds.has(f.id));
+    if (pendingFiles.length === 0) {
+      setToastNotification({
+        type: 'info',
+        text: 'All files are already in sync with Google Drive.',
+      });
+      return;
+    }
+
+    try {
+      setIsDriveSyncing(true);
+      let syncedCount = 0;
+      for (const f of pendingFiles) {
+        try {
+          const res = await saveFileToDrive(f);
+          syncedCount++;
+          if (res.fileId && res.fileId !== f.driveFileId) {
+            setFiles((prev) => {
+              const next = prev.map((item) =>
+                item.id === f.id ? { ...item, driveFileId: res.fileId } : item
+              );
+              saveVaultFiles(next);
+              return next;
+            });
+          }
+          setUnsavedFileIds((prev) => {
+            const next = new Set(prev);
+            next.delete(f.id);
+            return next;
+          });
+        } catch (err: any) {
+          console.error(`Failed to sync file ${f.name}:`, err);
+          if (err?.message?.includes('401') || err?.message?.includes('expired') || err?.message?.includes('authenticated')) {
+            throw err;
+          }
+        }
+      }
+      setToastNotification({
+        type: 'success',
+        text: `Synced ${syncedCount} file(s) to Google Drive (/Markdown Life Vault/).`,
+      });
+    } catch (err: any) {
+      const isAuthErr =
+        err?.message?.includes('401') ||
+        err?.message?.includes('expired') ||
+        err?.message?.includes('authenticated');
+      if (isAuthErr) {
+        setDriveStatus('expired');
+        setToastNotification({
+          type: 'error',
+          text: 'Google Drive session expired. Click Reconnect to sync pending edits.',
+        });
+      } else {
+        setToastNotification({
+          type: 'error',
+          text: `Sync error: ${err?.message || 'Check network connection'}`,
+        });
+      }
+    } finally {
       setIsDriveSyncing(false);
     }
   };
@@ -1046,6 +1179,7 @@ export default function App({ forceOffline = false }: AppProps) {
         onOpenDriveModal={() => setIsDriveModalOpen(true)}
         onRefreshDrive={handleRequestReloadFromDrive}
         onReconnectDrive={handleReconnectDrive}
+        onSyncAllUnsaved={handleSyncAllUnsaved}
         onTestConnection={handleTestDriveConnection}
         isRefreshingDrive={isRefreshingDrive}
         isMockMode={isMockMode}
@@ -1086,7 +1220,7 @@ export default function App({ forceOffline = false }: AppProps) {
               selectedFileId={selectedFileId}
               onSelectFile={(id) => setSelectedFileId(id)}
               onDeleteFile={handleDeleteFile}
-              onDuplicateFile={handleDuplicateFile}
+              onCopyDrivePath={handleCopyDrivePath}
               onRenameFile={handleRenameFile}
               onQuickNewFileInFolder={handleOpenNewFileInFolder}
               onDropFiles={handleImportFiles}
@@ -1163,6 +1297,8 @@ export default function App({ forceOffline = false }: AppProps) {
                 onOpenSkillPlayground={(s) => setSkillForPlayground(s)}
                 onRenameFile={handleRenameFile}
                 onSaveToDrive={isMockMode ? undefined : handleRequestSaveFileToDrive}
+                onCopyDrivePath={handleCopyDrivePath}
+                onDeleteFile={handleDeleteFile}
                 isSavingToDrive={isSavingSingleFileToDrive}
                 isDriveSyncing={isDriveSyncing}
                 driveStatus={driveStatus}
@@ -1259,6 +1395,17 @@ export default function App({ forceOffline = false }: AppProps) {
           onOpenConnectDrive={() => setIsDriveModalOpen(true)}
         />
       )}
+
+      {/* Delete File Confirmation Modal */}
+      <DeleteFileModal
+        isOpen={!!fileToDelete}
+        onClose={() => {
+          if (!isDeletingFile) setFileToDelete(null);
+        }}
+        onConfirm={handleConfirmDeleteFile}
+        file={fileToDelete}
+        isDeleting={isDeletingFile}
+      />
     </div>
   );
 }

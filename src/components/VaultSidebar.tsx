@@ -32,7 +32,7 @@ interface VaultSidebarProps {
   selectedFileId: string | null;
   onSelectFile: (id: string) => void;
   onDeleteFile: (id: string) => void;
-  onDuplicateFile: (file: VaultFile) => void;
+  onCopyDrivePath?: (file: VaultFile) => void;
   onRenameFile: (id: string, newFileName: string) => Promise<boolean> | boolean;
   onQuickNewFileInFolder: (folder: string) => void;
   onDropFiles: (fileList: FileList) => void;
@@ -44,7 +44,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
   selectedFileId,
   onSelectFile,
   onDeleteFile,
-  onDuplicateFile,
+  onCopyDrivePath,
   onRenameFile,
   onQuickNewFileInFolder,
   onDropFiles,
@@ -379,8 +379,8 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
             </span>
           )}
 
-          {/* Hover Actions */}
-          <div className="hidden group-hover/item:flex items-center gap-0.5">
+          {/* Actions: Always visible when item is selected, and visible on hover */}
+          <div className={`${isSelected ? 'flex' : 'hidden group-hover/item:flex'} items-center gap-0.5`}>
             <button
               type="button"
               title="Rename file"
@@ -396,21 +396,24 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
             >
               <Pencil className="w-3 h-3" />
             </button>
-            <button
-              type="button"
-              title="Duplicate file"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDuplicateFile(file);
-              }}
-              className={`p-1 rounded cursor-pointer ${
-                isSelected
-                  ? 'hover:bg-stone-800 text-stone-300'
-                  : 'hover:bg-stone-300 text-stone-500'
-              }`}
-            >
-              <Copy className="w-3 h-3" />
-            </button>
+            {onCopyDrivePath && (
+              <button
+                type="button"
+                id={`btn-copy-path-${file.id}`}
+                title="Copy path in Google Drive (/Markdown Life Vault/...)"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCopyDrivePath(file);
+                }}
+                className={`p-1 rounded cursor-pointer ${
+                  isSelected
+                    ? 'hover:bg-stone-800 text-stone-300'
+                    : 'hover:bg-stone-300 text-stone-500'
+                }`}
+              >
+                <Copy className="w-3 h-3" />
+              </button>
+            )}
             <button
               type="button"
               title="Download .md file"
@@ -428,7 +431,8 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
             </button>
             <button
               type="button"
-              title="Delete file"
+              id={`btn-delete-file-${file.id}`}
+              title="Delete file permanently"
               onClick={(e) => {
                 e.stopPropagation();
                 onDeleteFile(file.id);

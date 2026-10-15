@@ -208,6 +208,24 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                   </a>
                 </div>
               )}
+              {(statusMessage.text.toLowerCase().includes('401') ||
+                statusMessage.text.toLowerCase().includes('expired') ||
+                statusMessage.text.toLowerCase().includes('not authenticated') ||
+                statusMessage.text.toLowerCase().includes('token')) && (
+                <div className="pt-2 border-t border-red-200 dark:border-red-800/60 flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-red-700 dark:text-red-300">
+                    Google Drive session needs re-authentication to sync.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleSignIn}
+                    disabled={isSigningIn}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold cursor-pointer shrink-0 shadow-xs"
+                  >
+                    {isSigningIn ? 'Connecting...' : 'Reconnect Drive'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

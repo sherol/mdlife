@@ -20,26 +20,31 @@ provider.addScope('https://www.googleapis.com/auth/drive.file');
 const SESSION_TOKEN_KEY = 'gdrive_oauth_token';
 const SESSION_EXPIRES_KEY = 'gdrive_token_expires';
 
-// Helper to safely read token from sessionStorage
+// Helper to safely read token from sessionStorage or localStorage
 const getStoredSessionToken = (): string | null => {
   try {
-    const token = sessionStorage.getItem(SESSION_TOKEN_KEY);
-    const expiresStr = sessionStorage.getItem(SESSION_EXPIRES_KEY);
-    if (token && expiresStr) {
-      const expiresAt = parseInt(expiresStr, 10);
-      // Valid if more than 60 seconds remain before expiration
-      if (Date.now() < expiresAt - 60000) {
-        return token;
+    const token = sessionStorage.getItem(SESSION_TOKEN_KEY) || localStorage.getItem(SESSION_TOKEN_KEY);
+    const expiresStr = sessionStorage.getItem(SESSION_EXPIRES_KEY) || localStorage.getItem(SESSION_EXPIRES_KEY);
+    if (token) {
+      if (expiresStr) {
+        const expiresAt = parseInt(expiresStr, 10);
+        // If expired by more than 3 hours, disregard
+        if (Date.now() > expiresAt + 3 * 3600 * 1000) {
+          return null;
+        }
       }
+      return token;
     }
   } catch {}
   return null;
 };
 
-const storeSessionToken = (token: string, expiresInSecs = 3550) => {
+const storeSessionToken = (token: string, expiresInSecs = 7200) => {
   try {
     sessionStorage.setItem(SESSION_TOKEN_KEY, token);
     sessionStorage.setItem(SESSION_EXPIRES_KEY, String(Date.now() + expiresInSecs * 1000));
+    localStorage.setItem(SESSION_TOKEN_KEY, token);
+    localStorage.setItem(SESSION_EXPIRES_KEY, String(Date.now() + expiresInSecs * 1000));
   } catch {}
 };
 
@@ -47,6 +52,8 @@ const clearSessionToken = () => {
   try {
     sessionStorage.removeItem(SESSION_TOKEN_KEY);
     sessionStorage.removeItem(SESSION_EXPIRES_KEY);
+    localStorage.removeItem(SESSION_TOKEN_KEY);
+    localStorage.removeItem(SESSION_EXPIRES_KEY);
   } catch {}
 };
 
@@ -96,7 +103,7 @@ export const initAuth = (
 ) => {
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
-      // Check memory or sessionStorage for token
+      // Check memory, sessionStorage, or localStorage for token
       if (!cachedAccessToken) {
         cachedAccessToken = getStoredSessionToken();
       }
@@ -105,9 +112,10 @@ export const initAuth = (
         notifyDriveStatus('connected', { email: user.email || undefined });
         if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
       } else if (!isSigningIn) {
-        // User is authenticated with Firebase but has no active Google OAuth Drive token
-        notifyDriveStatus('expired', { error: 'Drive connection needs re-authentication' });
-        if (onAuthFailure) onAuthFailure();
+        // User is authenticated with Firebase but Drive token has expired or needs refreshing
+        notifyDriveStatus('expired', { email: user.email || undefined, error: 'Drive connection needs re-authentication' });
+        // Preserve user object so app knows user identity and can prompt for 1-click reconnection
+        if (onAuthSuccess) onAuthSuccess(user, '');
       }
     } else {
       cachedAccessToken = null;

@@ -192,10 +192,6 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
   };
 
   const handleRemoveCollaborator = async (permId: string, email?: string) => {
-    if (!confirm(`Remove collaborator ${email || ''}? They will lose access to this project folder.`)) {
-      return;
-    }
-
     try {
       if (isConnected && shareInfo?.folderId) {
         await removeProjectPermission(shareInfo.folderId, permId);

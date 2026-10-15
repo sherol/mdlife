@@ -28,6 +28,8 @@ import {
   AlertTriangle,
   Calendar,
   Share2,
+  Copy,
+  Trash2,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { VaultFile, FileFrontmatter, DriveConnectionStatus } from '../types';
@@ -44,6 +46,8 @@ interface MarkdownEditorProps {
   onOpenSkillPlayground: (file: VaultFile) => void;
   onRenameFile?: (fileId: string, newFileName: string) => Promise<boolean> | boolean;
   onSaveToDrive?: (file: VaultFile) => void;
+  onCopyDrivePath?: (file: VaultFile) => void;
+  onDeleteFile?: (fileId: string) => void;
   isSavingToDrive?: boolean;
   isDriveSyncing?: boolean;
   driveStatus?: DriveConnectionStatus;
@@ -62,6 +66,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   onOpenSkillPlayground,
   onRenameFile,
   onSaveToDrive,
+  onCopyDrivePath,
+  onDeleteFile,
   isSavingToDrive = false,
   isDriveSyncing = false,
   driveStatus = 'disconnected',
@@ -445,6 +451,20 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               <span>Share Project</span>
             </button>
           )}
+
+          {/* Delete File button */}
+          {onDeleteFile && (
+            <button
+              type="button"
+              id="btn-editor-delete-file"
+              onClick={() => onDeleteFile(file.id)}
+              title="Delete this file permanently from vault and Google Drive"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 border border-red-200 bg-red-50/80 hover:bg-red-100 text-red-700 rounded-md transition-colors shadow-2xs font-medium cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-red-600" />
+              <span>Delete</span>
+            </button>
+          )}
         </div>
 
         {/* Right: View Mode Toggle (Split, Edit, Preview) */}
@@ -657,6 +677,17 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               ) : (
                 <div className="flex items-center gap-2 group">
                   <span className="font-mono text-stone-700 font-semibold">{file.path}</span>
+                  {onCopyDrivePath && (
+                    <button
+                      type="button"
+                      onClick={() => onCopyDrivePath(file)}
+                      title="Copy file path in Google Drive (/Markdown Life Vault/...)"
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-stone-500 hover:text-stone-800 hover:bg-stone-200/80 rounded transition-colors cursor-pointer"
+                    >
+                      <Copy className="w-2.5 h-2.5" />
+                      <span>Copy Path</span>
+                    </button>
+                  )}
                   {onRenameFile && (
                     <button
                       type="button"
@@ -666,6 +697,18 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                     >
                       <Pencil className="w-2.5 h-2.5" />
                       <span>Rename</span>
+                    </button>
+                  )}
+                  {onDeleteFile && (
+                    <button
+                      type="button"
+                      id="btn-editor-path-delete"
+                      onClick={() => onDeleteFile(file.id)}
+                      title="Delete this file permanently"
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                      <span>Delete</span>
                     </button>
                   )}
                 </div>

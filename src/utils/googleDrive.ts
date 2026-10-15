@@ -194,7 +194,9 @@ export async function saveFileToDrive(
   // Check if file already exists in this folder (prevent duplicate creation)
   const baseName = file.name.replace(/\.md$/i, '');
   const fileName = `${baseName}.md`;
-  const q = `'${resolvedFolderId}' in parents and trashed = false and (name = '${fileName}' or name = '${baseName}')`;
+  const safeClean = fileName.replace(/'/g, "\\'");
+  const safeBase = baseName.replace(/'/g, "\\'");
+  const q = `'${resolvedFolderId}' in parents and trashed = false and (name = '${safeClean}' or name = '${safeBase}')`;
   const searchRes = await driveFetch(`files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
   const data = await searchRes.json();
 
@@ -256,37 +258,66 @@ export async function saveFileToDrive(
 }
 
 /**
- * Deletes a file from Google Drive
+ * Deletes a file and all matching copies from Google Drive
  */
 export async function deleteFileFromDrive(
   folderName: string,
   fileName: string,
   driveFileId?: string
 ): Promise<boolean> {
+  let anyDeleted = false;
   if (driveFileId) {
     try {
       await driveFetch(`files/${driveFileId}`, { method: 'DELETE' });
-      return true;
-    } catch {
-      // Fall through to query if direct delete fails
+      anyDeleted = true;
+    } catch (err) {
+      console.warn(`Direct delete by driveFileId failed, searching by query:`, err);
     }
   }
-  const { rootId } = await getVaultFolderHierarchy();
-  const folderId = await resolveDriveFolderId(folderName, rootId);
+
   const baseName = fileName.replace(/\.md$/i, '');
   const cleanName = `${baseName}.md`;
-  const q = `(name = '${cleanName}' or name = '${baseName}') and '${folderId}' in parents and trashed = false`;
-  const searchRes = await driveFetch(`files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
-  const data = await searchRes.json();
+  const safeClean = cleanName.replace(/'/g, "\\'");
+  const safeBase = baseName.replace(/'/g, "\\'");
+  const safeCopy = `${safeBase}-copy.md`.replace(/'/g, "\\'");
 
-  if (data.files && data.files.length > 0) {
-    const fileId = data.files[0].id;
-    await driveFetch(`files/${fileId}`, {
-      method: 'DELETE',
-    });
-    return true;
+  try {
+    const { rootId } = await getVaultFolderHierarchy();
+    const folderId = await resolveDriveFolderId(folderName, rootId);
+    const q = `(name = '${safeClean}' or name = '${safeBase}' or name = '${safeCopy}' or name contains '${safeBase}-copy') and '${folderId}' in parents and trashed = false`;
+    const searchRes = await driveFetch(`files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
+    const data = await searchRes.json();
+
+    if (data.files && Array.isArray(data.files) && data.files.length > 0) {
+      for (const item of data.files) {
+        try {
+          await driveFetch(`files/${item.id}`, { method: 'DELETE' });
+          anyDeleted = true;
+        } catch (delErr) {
+          console.warn(`Failed to delete Drive file copy ${item.id}:`, delErr);
+        }
+      }
+    }
+
+    // Also search across the whole vault to remove any stray copies or duplicate versions
+    const qGlobal = `(name = '${safeClean}' or name = '${safeBase}' or name = '${safeCopy}' or name contains '${safeBase}-copy') and trashed = false`;
+    const resGlobal = await driveFetch(`files?q=${encodeURIComponent(qGlobal)}&fields=files(id,name)`);
+    const dataGlobal = await resGlobal.json();
+    if (dataGlobal.files && Array.isArray(dataGlobal.files)) {
+      for (const item of dataGlobal.files) {
+        try {
+          await driveFetch(`files/${item.id}`, { method: 'DELETE' });
+          anyDeleted = true;
+        } catch (delErr) {
+          console.warn(`Failed to delete Drive file copy ${item.id}:`, delErr);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`Query-based file delete error in Drive:`, err);
   }
-  return false;
+
+  return anyDeleted;
 }
 
 /**
