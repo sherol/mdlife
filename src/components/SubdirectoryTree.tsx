@@ -1,171 +1,178 @@
 import React from 'react';
-import { ChevronRight, ChevronDown, Plus, Folder, Bot, Rocket, Calendar } from 'lucide-react';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 import { VaultFile } from '../types';
 
-interface SubdirectoryTreeProps {
-  topFolder: string;
-  files: VaultFile[];
-  collapsedSubfolders: Record<string, boolean>;
-  searchQuery: string;
-  onToggleSubfolder: (subfolderKey: string) => void;
-  onQuickNewFileInFolder: (folder: string) => void;
-  renderFileItem: (file: VaultFile, indent?: boolean) => React.ReactNode;
+/**
+ * Per-folder look of the second-level sub-directory rows (projects/<name>, archive/<year>, skills/<name>).
+ * Class names are passed in full so Tailwind can see the literal `group/<name>` variants.
+ */
+export interface SubfolderVariant {
+  rowClassName: string;
+  toggleClassName: string;
+  countClassName: string;
+  renderIcon: (isOpen: boolean) => React.ReactNode;
+  renderLabel: (slug: string, subKey: string) => React.ReactNode;
+  renderActions: (subKey: string, slug: string) => React.ReactNode;
+  sort?: (a: string, b: string) => number;
 }
 
+interface SubdirectoryTreeProps {
+  /** Top-level folder key, e.g. "projects". */
+  folder: string;
+  /** Files that belong to this top-level folder. */
+  files: VaultFile[];
+  label: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  headerIcon: React.ReactNode;
+  headerToggleClassName: string;
+  headerLabelClassName?: string;
+  headerCountClassName: string;
+  headerActions?: React.ReactNode;
+  /** Optional inline form shown at the top of the expanded folder (e.g. "new year"). */
+  inlineForm?: React.ReactNode;
+  /** When given, files are grouped by their second path segment; otherwise listed flat. */
+  subfolders?: SubfolderVariant;
+  isSubfolderOpen: (subKey: string) => boolean;
+  onToggleSubfolder: (subKey: string) => void;
+  /** Heading shown above files directly in the folder when sub-directories exist. */
+  rootFilesHeading?: React.ReactNode;
+  emptyText: string;
+  renderFileItem: (file: VaultFile) => React.ReactNode;
+}
+
+const Chevron: React.FC<{ isOpen: boolean }> = ({ isOpen }) =>
+  isOpen ? (
+    <ChevronDown className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+  ) : (
+    <ChevronRight className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+  );
+
+/** The second path segment of a folder below `folder` ("projects/foo/bar" -> "foo"), or '' for root files. */
+const getSubSlug = (fileFolder: string, folder: string): string => {
+  const parts = (fileFolder || '').split('/');
+  if (parts.length < 2 || parts[0].toLowerCase() !== folder.toLowerCase()) return '';
+  return parts[1];
+};
+
 /**
- * Reusable helper component to render nested sub-directories for any top-level vault category
- * (e.g. skills/<skill-name>, projects/<project-name>, archive/<year>, or custom folders)
+ * One top-level vault folder in the sidebar: header row with actions, optional inline form,
+ * optional second-level sub-directories (files nested deeper stay inside their sub-directory)
+ * and the files directly in the folder. Every file passed in is rendered somewhere.
  */
 export const SubdirectoryTree: React.FC<SubdirectoryTreeProps> = ({
-  topFolder,
+  folder,
   files,
-  collapsedSubfolders,
-  searchQuery,
+  label,
+  isOpen,
+  onToggle,
+  headerIcon,
+  headerToggleClassName,
+  headerLabelClassName,
+  headerCountClassName,
+  headerActions,
+  inlineForm,
+  subfolders,
+  isSubfolderOpen,
   onToggleSubfolder,
-  onQuickNewFileInFolder,
+  rootFilesHeading,
+  emptyText,
   renderFileItem,
 }) => {
-  const prefix = `${topFolder.toLowerCase()}/`;
+  const groups = new Map<string, { slug: string; files: VaultFile[] }>();
+  const rootFiles: VaultFile[] = [];
 
-  // Extract distinct sub-directories under this topFolder
-  const distinctSubSlugs = Array.from(
-    new Set(
-      files
-        .filter(
-          (f) =>
-            f.folder.toLowerCase().startsWith(prefix) &&
-            f.folder.toLowerCase() !== topFolder.toLowerCase()
-        )
-        .map((f) => {
-          const relative = f.folder.slice(prefix.length);
-          return relative.split('/')[0];
-        })
-        .filter(Boolean)
-    )
-  ).sort((a, b) => {
-    // For archive years, sort descending (e.g. 2026, 2025)
-    if (topFolder.toLowerCase() === 'archive') {
-      return b.localeCompare(a);
+  if (subfolders) {
+    for (const file of files) {
+      const slug = getSubSlug(file.folder, folder);
+      if (!slug) {
+        rootFiles.push(file);
+        continue;
+      }
+      const groupKey = slug.toLowerCase();
+      const group = groups.get(groupKey);
+      if (group) group.files.push(file);
+      else groups.set(groupKey, { slug, files: [file] });
     }
-    return a.localeCompare(b);
-  });
+  }
 
-  // Files directly at topFolder root level
-  const rootFiles = files.filter((f) => {
-    const folderLower = f.folder.toLowerCase().trim();
-    return folderLower === topFolder.toLowerCase() || !folderLower.startsWith(prefix);
-  });
-
-  const getSubfolderIcon = (slug: string) => {
-    switch (topFolder.toLowerCase()) {
-      case 'skills':
-        return <Bot className="w-3 h-3 text-emerald-600 shrink-0" />;
-      case 'projects':
-        return <Rocket className="w-3 h-3 text-blue-600 shrink-0" />;
-      case 'archive':
-        return <Calendar className="w-3 h-3 text-purple-600 shrink-0" />;
-      default:
-        return <Folder className="w-3 h-3 text-stone-500 shrink-0" />;
-    }
-  };
-
-  const getSubfolderTheme = () => {
-    switch (topFolder.toLowerCase()) {
-      case 'skills':
-        return {
-          border: 'border-emerald-200/60',
-          hoverBg: 'hover:bg-emerald-50/60',
-          btnHover: 'hover:bg-emerald-100 text-emerald-800',
-        };
-      case 'projects':
-        return {
-          border: 'border-blue-200/60',
-          hoverBg: 'hover:bg-blue-50/60',
-          btnHover: 'hover:bg-blue-100 text-blue-800',
-        };
-      case 'archive':
-        return {
-          border: 'border-purple-200/60',
-          hoverBg: 'hover:bg-purple-50/60',
-          btnHover: 'hover:bg-purple-100 text-purple-800',
-        };
-      default:
-        return {
-          border: 'border-stone-200/60',
-          hoverBg: 'hover:bg-stone-100/60',
-          btnHover: 'hover:bg-stone-200 text-stone-800',
-        };
-    }
-  };
-
-  const theme = getSubfolderTheme();
+  const sortedGroups = Array.from(groups.values()).sort((a, b) =>
+    subfolders?.sort ? subfolders.sort(a.slug, b.slug) : a.slug.localeCompare(b.slug)
+  );
 
   return (
-    <div className="space-y-1 pt-0.5 pl-1.5">
-      {/* Sub-directories */}
-      {distinctSubSlugs.map((slug) => {
-        const subKey = `${topFolder}/${slug}`;
-        const isCollapsed = !!collapsedSubfolders[subKey] && !searchQuery.trim();
-        const subFiles = files.filter(
-          (f) =>
-            f.folder.toLowerCase() === subKey.toLowerCase() ||
-            f.folder.toLowerCase().startsWith(`${subKey.toLowerCase()}/`)
-        );
+    <div className="space-y-0.5">
+      {/* Folder Header */}
+      <div className="flex items-center justify-between px-2 py-1.5 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group">
+        <button
+          type="button"
+          id={`folder-btn-${folder}`}
+          onClick={onToggle}
+          aria-expanded={isOpen}
+          className={headerToggleClassName}
+        >
+          <Chevron isOpen={isOpen} />
+          {headerIcon}
+          <span className={headerLabelClassName}>{label}</span>
+          <span className={headerCountClassName}>({files.length})</span>
+        </button>
+        {headerActions}
+      </div>
 
-        const formattedLabel = slug
-          .split(/[-_]/)
-          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-          .join(' ');
+      {/* Sub-directories and Files */}
+      {isOpen && (
+        <div className="ml-3 pl-2 border-l border-stone-200/80 space-y-0.5 pt-0.5">
+          {inlineForm}
 
-        return (
-          <div key={subKey} className={`ml-2 border-l ${theme.border} pl-1.5 space-y-0.5`}>
-            {/* Subfolder Header */}
-            <div
-              className={`flex items-center justify-between px-2 py-1 text-stone-600 hover:text-stone-900 rounded-md ${theme.hoverBg} group/sub`}
-            >
-              <button
-                type="button"
-                onClick={() => onToggleSubfolder(subKey)}
-                className="flex items-center gap-1.5 font-medium text-xs text-stone-700 hover:text-stone-900 cursor-pointer min-w-0"
-              >
-                {isCollapsed ? (
-                  <ChevronRight className="w-3 h-3 text-stone-400 shrink-0" />
-                ) : (
-                  <ChevronDown className="w-3 h-3 text-stone-400 shrink-0" />
-                )}
-                {getSubfolderIcon(slug)}
-                <span className="font-semibold truncate max-w-[130px]" title={subKey}>
-                  {formattedLabel}
-                </span>
-                <span className="text-[10px] text-stone-400 font-mono shrink-0">
-                  ({subFiles.length})
-                </span>
-              </button>
+          {!subfolders ? (
+            files.length === 0 ? (
+              <div className="px-2 py-1 text-[11px] text-stone-400 italic">{emptyText}</div>
+            ) : (
+              files.map((file) => renderFileItem(file))
+            )
+          ) : (
+            <>
+              {sortedGroups.map(({ slug, files: subFiles }) => {
+                const subKey = `${folder}/${slug}`;
+                const isSubOpen = isSubfolderOpen(subKey);
+                return (
+                  <div key={subKey} className="space-y-0.5">
+                    <div className={subfolders.rowClassName}>
+                      <button
+                        type="button"
+                        onClick={() => onToggleSubfolder(subKey)}
+                        aria-expanded={isSubOpen}
+                        className={subfolders.toggleClassName}
+                      >
+                        <Chevron isOpen={isSubOpen} />
+                        {subfolders.renderIcon(isSubOpen)}
+                        {subfolders.renderLabel(slug, subKey)}
+                        <span className={subfolders.countClassName}>({subFiles.length})</span>
+                      </button>
+                      {subfolders.renderActions(subKey, slug)}
+                    </div>
 
-              <button
-                type="button"
-                onClick={() => onQuickNewFileInFolder(subKey)}
-                title={`Add file to ${slug}`}
-                className={`p-0.5 opacity-0 group-hover/sub:opacity-100 rounded cursor-pointer transition-opacity shrink-0 ${theme.btnHover}`}
-              >
-                <Plus className="w-3 h-3" />
-              </button>
-            </div>
+                    {isSubOpen && (
+                      <div className="ml-3 pl-2 border-l border-stone-200/80 space-y-0.5 pt-0.5">
+                        {subFiles.map((file) => renderFileItem(file))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
 
-            {/* Subfolder Files */}
-            {!isCollapsed && (
-              <div className="space-y-0.5">
-                {subFiles.map((file) => renderFileItem(file, true))}
-              </div>
-            )}
-          </div>
-        );
-      })}
+              {rootFiles.length > 0 && (
+                <div className="space-y-0.5 pt-0.5">
+                  {sortedGroups.length > 0 && rootFilesHeading}
+                  {rootFiles.map((file) => renderFileItem(file))}
+                </div>
+              )}
 
-      {/* Root Files under this category */}
-      {rootFiles.length > 0 && (
-        <div className="space-y-0.5 pt-0.5">
-          {rootFiles.map((file) => renderFileItem(file, true))}
+              {files.length === 0 && (
+                <div className="px-2 py-1 text-[11px] text-stone-400 italic">{emptyText}</div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>
