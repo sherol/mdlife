@@ -876,10 +876,8 @@ export default function App({ forceOffline = false }: AppProps) {
         driveStatus={driveStatus}
         unsavedFilesCount={unsavedFileIds.size}
         onOpenDriveModal={() => setIsDriveModalOpen(true)}
-        onRefreshDrive={handleRequestReloadFromDrive}
         onReconnectDrive={handleReconnectDrive}
         onSyncAllUnsaved={handleSyncAllUnsaved}
-        onTestConnection={handleTestDriveConnection}
         isRefreshingDrive={isRefreshingDrive}
         isMockMode={isMockMode}
       />
@@ -1023,7 +1021,6 @@ export default function App({ forceOffline = false }: AppProps) {
               setSelectedFileId(id);
               setActiveTab('editor');
             }}
-            onOpenSkillPlayground={(s) => setSkillForPlayground(s)}
             onQuickNewFileInFolder={handleOpenNewFileInFolder}
           />
         )}

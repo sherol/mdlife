@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { Trash2, AlertTriangle, Loader2 } from 'lucide-react';
 import { VaultFile } from '../types';
+import { Modal } from './Modal';
 
 interface DeleteFileModalProps {
   isOpen: boolean;
@@ -17,17 +18,24 @@ export const DeleteFileModal: React.FC<DeleteFileModalProps> = ({
   file,
   isDeleting = false,
 }) => {
+  const titleId = useId();
   if (!isOpen || !file) return null;
 
   return (
-    <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-xs animate-in fade-in duration-100">
-      <div className="rounded-2xl border shadow-2xl max-w-md w-full p-5 space-y-4 bg-white border-stone-200 text-stone-900">
+    <Modal
+      onClose={() => {
+        if (!isDeleting) onClose();
+      }}
+      labelledBy={titleId}
+      overlayClassName="fixed inset-0 z-60 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-xs animate-in fade-in duration-100"
+      className="rounded-2xl border shadow-2xl max-w-md w-full p-5 space-y-4 bg-white border-stone-200 text-stone-900"
+    >
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0 shadow-xs">
             <Trash2 className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="font-bold text-sm text-stone-900">Delete File</h4>
+            <h4 id={titleId} className="font-bold text-sm text-stone-900">Delete File</h4>
             <p className="text-[11px] text-stone-500">Remove from vault and Google Drive</p>
           </div>
         </div>
@@ -77,7 +85,6 @@ export const DeleteFileModal: React.FC<DeleteFileModalProps> = ({
             )}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

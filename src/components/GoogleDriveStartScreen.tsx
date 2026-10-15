@@ -3,8 +3,6 @@ import {
   HardDrive,
   Lock,
   FolderSync,
-  FileText,
-  Sparkles,
   ArrowRight,
   Loader2,
   AlertCircle,

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Heading1,
   Heading2,
@@ -17,15 +17,11 @@ import {
   Columns2,
   Eye,
   Edit3,
-  Bot,
-  Tag,
-  HardDrive,
   CloudUpload,
   Loader2,
   Pencil,
-  Check,
-  X,
   AlertTriangle,
+  Search,
   Calendar,
   Share2,
   Copy,
@@ -36,6 +32,17 @@ import { VaultFile, FileFrontmatter, DriveConnectionStatus } from '../types';
 import { MarkdownPreview } from './MarkdownPreview';
 import { parseFrontmatter, stringifyWithFrontmatter } from '../utils/markdownParser';
 import { getTodayYYMMDD } from '../utils/date';
+import { isProjectFile } from '../utils/fileKinds';
+
+const parseTags = (raw: string): string[] =>
+  Array.from(
+    new Set(
+      raw
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
+    )
+  );
 
 interface MarkdownEditorProps {
   file: VaultFile;
@@ -79,9 +86,64 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const [viewMode, setViewMode] = useState<'split' | 'edit' | 'preview'>('split');
   const [showMetadataDrawer, setShowMetadataDrawer] = useState(false);
   const [showWikiDropdown, setShowWikiDropdown] = useState(false);
+  const [wikiFilter, setWikiFilter] = useState('');
+  const [wikiActiveIndex, setWikiActiveIndex] = useState(0);
   const [isEditingFilename, setIsEditingFilename] = useState(false);
   const [editingFilenameVal, setEditingFilenameVal] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const wikiPickerRef = useRef<HTMLDivElement>(null);
+  const wikiButtonRef = useRef<HTMLButtonElement>(null);
+  // Set when Escape is pressed in the editor so the next Tab moves focus instead of indenting
+  const escapePressedRef = useRef(false);
+
+  // Tags are edited as a raw string and only parsed on blur / Enter, so typing "a, " keeps the comma
+  const currentTagsString = (file.frontmatter.tags || []).join(', ');
+  const [tagsDraft, setTagsDraft] = useState(currentTagsString);
+  const isEditingTagsRef = useRef(false);
+  useEffect(() => {
+    if (!isEditingTagsRef.current) setTagsDraft(currentTagsString);
+  }, [file.id, currentTagsString]);
+
+  const commitTags = () => {
+    const tags = parseTags(tagsDraft);
+    setTagsDraft(tags.join(', '));
+    if (tags.join(', ') !== currentTagsString) {
+      updateFrontmatterProperty({ tags });
+    }
+  };
+
+  // Wiki-link picker: filtered list of other files
+  const wikiCandidates = useMemo(() => {
+    const q = wikiFilter.trim().toLowerCase();
+    return allFiles
+      .filter((f) => f.id !== file.id)
+      .filter(
+        (f) =>
+          !q ||
+          f.name.toLowerCase().includes(q) ||
+          f.path.toLowerCase().includes(q) ||
+          (f.frontmatter.title || '').toLowerCase().includes(q)
+      );
+  }, [allFiles, file.id, wikiFilter]);
+
+  const closeWikiPicker = (returnFocus = false) => {
+    setShowWikiDropdown(false);
+    setWikiFilter('');
+    setWikiActiveIndex(0);
+    if (returnFocus) wikiButtonRef.current?.focus();
+  };
+
+  // Close the picker on outside click
+  useEffect(() => {
+    if (!showWikiDropdown) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      if (wikiPickerRef.current && !wikiPickerRef.current.contains(e.target as Node)) {
+        closeWikiPicker();
+      }
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, [showWikiDropdown]);
 
   const handleStartRename = () => {
     setEditingFilenameVal(file.name.replace(/\.md$/, ''));
@@ -102,7 +164,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const words = file.content.trim() ? file.content.trim().split(/\s+/).length : 0;
   const chars = file.content.length;
   const lines = file.content.split('\n').length;
-  const isProjectFile = file.folder.startsWith('projects') || file.frontmatter.category === 'projects';
+  const isProject = isProjectFile(file);
 
   // Insert markdown snippet at current cursor or selection
   const insertText = (before: string, after: string = '', defaultText: string = '') => {
@@ -111,19 +173,34 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-    const selection = file.content.substring(start, end) || defaultText;
+    const selection = textarea.value.substring(start, end) || defaultText;
     const replacement = `${before}${selection}${after}`;
-    const newContent =
-      file.content.substring(0, start) + replacement + file.content.substring(end);
+    const selectInserted = () =>
+      textarea.setSelectionRange(start + before.length, start + before.length + selection.length);
 
+    // Prefer execCommand('insertText') so the edit lands on the browser's native undo stack.
+    // It fires a regular input event, which flows through onChange.
+    textarea.focus();
+    textarea.setSelectionRange(start, end);
+    let inserted = false;
+    try {
+      inserted =
+        typeof document.execCommand === 'function' && document.execCommand('insertText', false, replacement);
+    } catch {
+      inserted = false;
+    }
+
+    if (inserted) {
+      selectInserted();
+      return;
+    }
+
+    // Fallback: replace the content directly (no native undo)
+    const newContent = textarea.value.substring(0, start) + replacement + textarea.value.substring(end);
     onChangeContent(newContent);
-
     setTimeout(() => {
       textarea.focus();
-      textarea.setSelectionRange(
-        start + before.length,
-        start + before.length + selection.length
-      );
+      selectInserted();
     }, 0);
   };
 
@@ -160,11 +237,38 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Support Tab indenting
-    if (e.key === 'Tab') {
+    const mod = e.metaKey || e.ctrlKey;
+
+    // Formatting shortcuts
+    if (mod && !e.altKey && !e.shiftKey && (e.key === 'b' || e.key === 'B')) {
+      e.preventDefault();
+      insertText('**', '**', 'bold text');
+      return;
+    }
+    if (mod && !e.altKey && !e.shiftKey && (e.key === 'i' || e.key === 'I')) {
+      e.preventDefault();
+      insertText('*', '*', 'italic text');
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      // Escape, then Tab: leave the editor with the keyboard instead of indenting
+      escapePressedRef.current = true;
+      return;
+    }
+
+    // Plain Tab indents (Shift+Tab and modified Tab keep their native focus behaviour)
+    if (e.key === 'Tab' && !e.shiftKey && !mod && !e.altKey) {
+      if (escapePressedRef.current) {
+        escapePressedRef.current = false;
+        return;
+      }
       e.preventDefault();
       insertText('  ');
+      return;
     }
+
+    escapePressedRef.current = false;
   };
 
   // Update frontmatter properties cleanly
@@ -176,8 +280,25 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   };
 
   const handleInsertWikiLink = (targetFile: VaultFile) => {
+    closeWikiPicker();
     insertText(`[[${targetFile.name}]]`);
-    setShowWikiDropdown(false);
+  };
+
+  const handleWikiFilterKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeWikiPicker(true);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setWikiActiveIndex((i) => Math.min(i + 1, Math.max(wikiCandidates.length - 1, 0)));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setWikiActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const target = wikiCandidates[wikiActiveIndex] || wikiCandidates[0];
+      if (target) handleInsertWikiLink(target);
+    }
   };
 
   return (
@@ -191,6 +312,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               type="button"
               id="btn-h1"
               title="Heading 1"
+              aria-label="Heading 1"
               onClick={() => insertText('# ', '', 'Heading')}
               className="p-1.5 hover:bg-stone-100 rounded text-stone-700"
             >
@@ -200,6 +322,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               type="button"
               id="btn-h2"
               title="Heading 2"
+              aria-label="Heading 2"
               onClick={() => insertText('## ', '', 'Heading')}
               className="p-1.5 hover:bg-stone-100 rounded text-stone-700"
             >
@@ -209,6 +332,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               type="button"
               id="btn-h3"
               title="Heading 3"
+              aria-label="Heading 3"
               onClick={() => insertText('### ', '', 'Heading')}
               className="p-1.5 hover:bg-stone-100 rounded text-stone-700"
             >
@@ -220,7 +344,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             <button
               type="button"
               id="btn-bold"
-              title="Bold"
+              title="Bold (Ctrl/Cmd+B)"
+              aria-label="Bold"
               onClick={() => insertText('**', '**', 'bold text')}
               className="p-1.5 hover:bg-stone-100 rounded text-stone-700 font-bold"
             >
@@ -229,7 +354,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             <button
               type="button"
               id="btn-italic"
-              title="Italic"
+              title="Italic (Ctrl/Cmd+I)"
+              aria-label="Italic"
               onClick={() => insertText('*', '*', 'italic text')}
               className="p-1.5 hover:bg-stone-100 rounded text-stone-700"
             >
@@ -242,6 +368,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               type="button"
               id="btn-task"
               title="Task Checkbox"
+              aria-label="Task Checkbox"
               onClick={() => insertText('- [ ] ', '', 'Task description')}
               className="p-1.5 hover:bg-stone-100 rounded text-stone-700"
             >
@@ -251,6 +378,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               type="button"
               id="btn-bullet"
               title="Bullet List"
+              aria-label="Bullet List"
               onClick={() => insertText('- ', '', 'List item')}
               className="p-1.5 hover:bg-stone-100 rounded text-stone-700"
             >
@@ -260,6 +388,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               type="button"
               id="btn-ordered"
               title="Numbered List"
+              aria-label="Numbered List"
               onClick={() => insertText('1. ', '', 'Numbered item')}
               className="p-1.5 hover:bg-stone-100 rounded text-stone-700"
             >
@@ -272,6 +401,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               type="button"
               id="btn-quote"
               title="Quote"
+              aria-label="Quote"
               onClick={() => insertText('> ', '', 'Quote')}
               className="p-1.5 hover:bg-stone-100 rounded text-stone-700"
             >
@@ -281,6 +411,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               type="button"
               id="btn-code"
               title="Code Block"
+              aria-label="Code Block"
               onClick={() => insertText('```\n', '\n```', 'code block')}
               className="p-1.5 hover:bg-stone-100 rounded text-stone-700"
             >
@@ -290,6 +421,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               type="button"
               id="btn-table"
               title="Insert Markdown Table"
+              aria-label="Insert Markdown Table"
               onClick={() =>
                 insertText(
                   '\n| Column 1 | Column 2 | Column 3 |\n| :--- | :--- | :--- |\n| Item 1 | Details | Active |\n| Item 2 | Details | Pending |\n\n',
@@ -317,12 +449,15 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             </button>
 
             {/* Link / Wiki-Link Dropdown */}
-            <div className="relative">
+            <div className="relative" ref={wikiPickerRef}>
               <button
+                ref={wikiButtonRef}
                 type="button"
                 id="btn-insert-wikilink"
                 title="Insert [[Link]] to another file"
-                onClick={() => setShowWikiDropdown(!showWikiDropdown)}
+                aria-haspopup="listbox"
+                aria-expanded={showWikiDropdown}
+                onClick={() => (showWikiDropdown ? closeWikiPicker() : setShowWikiDropdown(true))}
                 className="flex items-center gap-1 px-2 py-1 hover:bg-stone-100 rounded text-stone-700 text-xs"
               >
                 <LinkIcon className="w-3.5 h-3.5 text-blue-600" />
@@ -330,25 +465,61 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               </button>
 
             {showWikiDropdown && (
-              <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-stone-200 rounded-lg shadow-lg z-30 p-1 max-h-56 overflow-y-auto">
-                <div className="px-2 py-1 text-[11px] font-semibold text-stone-400 uppercase">
-                  Select file to link:
+              <div
+                className="absolute top-full left-0 mt-1 w-64 bg-white border border-stone-200 rounded-lg shadow-lg z-30 p-1"
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeWikiPicker(true);
+                  }
+                }}
+              >
+                <div className="relative mb-1">
+                  <Search className="w-3 h-3 absolute left-2 top-2 text-stone-400" />
+                  <input
+                    type="text"
+                    autoFocus
+                    value={wikiFilter}
+                    onChange={(e) => {
+                      setWikiFilter(e.target.value);
+                      setWikiActiveIndex(0);
+                    }}
+                    onKeyDown={handleWikiFilterKeyDown}
+                    placeholder="Filter files to link..."
+                    aria-label="Filter files to link"
+                    aria-controls="wikilink-picker-list"
+                    aria-activedescendant={
+                      wikiCandidates[wikiActiveIndex] ? `wikilink-option-${wikiActiveIndex}` : undefined
+                    }
+                    className="w-full pl-6 pr-2 py-1 bg-stone-50 border border-stone-200 rounded text-xs text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:border-stone-400"
+                  />
                 </div>
-                {allFiles
-                  .filter((f) => f.id !== file.id)
-                  .map((target) => (
-                    <button
-                      key={target.id}
-                      type="button"
-                      onClick={() => handleInsertWikiLink(target)}
-                      className="w-full text-left px-2 py-1.5 text-xs hover:bg-stone-100 rounded flex items-center justify-between text-stone-800"
-                    >
-                      <span className="truncate">{target.frontmatter.title || target.name}</span>
-                      <span className="text-[10px] font-mono text-stone-400 ml-1">
-                        /{target.folder}
-                      </span>
-                    </button>
-                  ))}
+                <div id="wikilink-picker-list" role="listbox" aria-label="Files" className="max-h-56 overflow-y-auto">
+                  {wikiCandidates.length === 0 ? (
+                    <div className="px-2 py-1.5 text-[11px] text-stone-400 italic">No matching files</div>
+                  ) : (
+                    wikiCandidates.map((target, idx) => (
+                      <button
+                        key={target.id}
+                        id={`wikilink-option-${idx}`}
+                        type="button"
+                        role="option"
+                        aria-selected={idx === wikiActiveIndex}
+                        tabIndex={-1}
+                        onMouseEnter={() => setWikiActiveIndex(idx)}
+                        onClick={() => handleInsertWikiLink(target)}
+                        className={`w-full text-left px-2 py-1.5 text-xs hover:bg-stone-100 rounded flex items-center justify-between text-stone-800 ${
+                          idx === wikiActiveIndex ? 'bg-stone-100' : ''
+                        }`}
+                      >
+                        <span className="truncate">{target.frontmatter.title || target.name}</span>
+                        <span className="text-[10px] font-mono text-stone-400 ml-1">
+                          /{target.folder}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -439,7 +610,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           )}
 
           {/* Share Project with other Google Accounts button */}
-          {isProjectFile && onShareProject && (
+          {isProject && onShareProject && (
             <button
               type="button"
               id="btn-editor-share-project"
@@ -519,8 +690,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         <div className="bg-stone-50 border-b border-stone-200 px-4 py-3 text-xs grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-in fade-in duration-150">
           {/* Status */}
           <div>
-            <label className="block text-stone-500 font-medium mb-1">Status</label>
+            <label htmlFor="frontmatter-status-select" className="block text-stone-500 font-medium mb-1">Status</label>
             <select
+              id="frontmatter-status-select"
               value={file.frontmatter.status || 'active'}
               onChange={(e) =>
                 updateFrontmatterProperty({ status: e.target.value as any })
@@ -538,8 +710,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
           {/* Priority */}
           <div>
-            <label className="block text-stone-500 font-medium mb-1">Priority</label>
+            <label htmlFor="frontmatter-priority-select" className="block text-stone-500 font-medium mb-1">Priority</label>
             <select
+              id="frontmatter-priority-select"
               value={file.frontmatter.priority || 'medium'}
               onChange={(e) =>
                 updateFrontmatterProperty({ priority: e.target.value as any })
@@ -554,8 +727,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
           {/* Target Date */}
           <div>
-            <label className="block text-stone-500 font-medium mb-1">Target Date</label>
+            <label htmlFor="frontmatter-target-date" className="block text-stone-500 font-medium mb-1">Target Date</label>
             <input
+              id="frontmatter-target-date"
               type="date"
               value={file.frontmatter.target_date || ''}
               onChange={(e) =>
@@ -567,19 +741,30 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
           {/* Tags */}
           <div>
-            <label className="block text-stone-500 font-medium mb-1">
+            <label htmlFor="frontmatter-tags-input" className="block text-stone-500 font-medium mb-1">
               Tags (comma separated)
             </label>
             <input
+              id="frontmatter-tags-input"
               type="text"
               placeholder="goals, 2026, tech"
-              value={(file.frontmatter.tags || []).join(', ')}
-              onChange={(e) => {
-                const tags = e.target.value
-                  .split(',')
-                  .map((t) => t.trim())
-                  .filter(Boolean);
-                updateFrontmatterProperty({ tags });
+              value={tagsDraft}
+              onFocus={() => {
+                isEditingTagsRef.current = true;
+              }}
+              onChange={(e) => setTagsDraft(e.target.value)}
+              onBlur={() => {
+                isEditingTagsRef.current = false;
+                commitTags();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commitTags();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setTagsDraft(currentTagsString);
+                }
               }}
               className="w-full bg-white border border-stone-200 rounded px-2 py-1 text-stone-800 text-xs"
             />
@@ -722,6 +907,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               onChange={(e) => handleContentChangeWithToday(e.target.value, e.target.selectionStart)}
               onKeyDown={handleKeyDown}
               spellCheck={false}
+              aria-label={`Markdown source of ${file.path}`}
+              aria-describedby="editor-keyboard-hint"
               placeholder="Write markdown here... (type @today for date)"
               className="flex-1 p-4 md:p-6 font-mono text-xs md:text-sm text-stone-900 bg-transparent resize-none focus:outline-hidden leading-relaxed"
             />
@@ -758,6 +945,10 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           <span>{chars} characters</span>
         </div>
         <div className="flex items-center gap-2 font-mono text-[10px] text-stone-400">
+          <span id="editor-keyboard-hint" className="hidden md:inline font-sans">
+            Tab indents · Esc then Tab leaves the editor · Ctrl/Cmd+B / I / K
+          </span>
+          <span className="hidden md:inline">•</span>
           <span>Markdown GFM</span>
           <span>•</span>
           <span>YAML Frontmatter</span>

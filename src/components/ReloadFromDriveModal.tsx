@@ -1,6 +1,7 @@
-import React from 'react';
-import { RefreshCw, AlertTriangle, CloudUpload, ArrowRight, X } from 'lucide-react';
+import React, { useId } from 'react';
+import { AlertTriangle, CloudUpload, X } from 'lucide-react';
 import { VaultFile } from '../types';
+import { Modal } from './Modal';
 
 interface ReloadFromDriveModalProps {
   isOpen: boolean;
@@ -19,11 +20,18 @@ export const ReloadFromDriveModal: React.FC<ReloadFromDriveModalProps> = ({
   onDiscardAndReload,
   isProcessing,
 }) => {
+  const titleId = useId();
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs">
-      <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-stone-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <Modal
+      onClose={() => {
+        if (!isProcessing) onClose();
+      }}
+      labelledBy={titleId}
+      overlayClassName="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs"
+      className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-stone-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+    >
         {/* Header */}
         <div className="p-5 border-b border-stone-100 flex items-start justify-between bg-stone-50/70">
           <div className="flex items-center gap-2.5 text-stone-900">
@@ -31,7 +39,7 @@ export const ReloadFromDriveModal: React.FC<ReloadFromDriveModalProps> = ({
               <AlertTriangle className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-semibold text-sm text-stone-900">Reload from Google Drive</h3>
+              <h3 id={titleId} className="font-semibold text-sm text-stone-900">Reload from Google Drive</h3>
               <p className="text-xs text-stone-500">Unsaved local edits detected</p>
             </div>
           </div>
@@ -39,6 +47,7 @@ export const ReloadFromDriveModal: React.FC<ReloadFromDriveModalProps> = ({
             type="button"
             onClick={onClose}
             disabled={isProcessing}
+            aria-label="Close"
             className="p-1 rounded-lg hover:bg-stone-200/60 text-stone-400 hover:text-stone-700 transition-colors"
           >
             <X className="w-4 h-4" />
@@ -97,7 +106,6 @@ export const ReloadFromDriveModal: React.FC<ReloadFromDriveModalProps> = ({
             Cancel
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

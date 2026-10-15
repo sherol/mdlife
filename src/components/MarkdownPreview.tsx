@@ -1,5 +1,13 @@
-import React, { useState, useMemo } from 'react';
-import ReactMarkdown from 'react-markdown';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useDeferredValue,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import ReactMarkdown, { Components, defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   Calendar,
@@ -7,16 +15,22 @@ import {
   Target,
   Rocket,
   Bot,
-  CheckCircle2,
   Copy,
   Check,
   Zap,
   ArrowUpRight,
   ExternalLink,
-  FileText,
   Sparkles,
+  Link2,
 } from 'lucide-react';
 import { VaultFile } from '../types';
+import {
+  extractWikiLinks,
+  getTaskLineIndexMap,
+  splitFrontmatterBlock,
+  wikiTargetMatchesFile,
+} from '../utils/markdownParser';
+import { getTopLevelFolder, isSkillFile } from '../utils/fileKinds';
 
 interface MarkdownPreviewProps {
   file: VaultFile;
@@ -25,6 +39,295 @@ interface MarkdownPreviewProps {
   onToggleCheckbox: (index: number) => void;
   onOpenSkillPlayground: (file: VaultFile) => void;
 }
+
+/**
+ * Allow the internal `wiki:` scheme (generated from [[WikiLinks]]) and `tel:` links,
+ * which react-markdown's default sanitizer would strip; everything else goes through
+ * the default (safe) transform.
+ */
+const previewUrlTransform = (url: string): string => {
+  if (/^(wiki|tel):/i.test(url)) return url;
+  return defaultUrlTransform(url);
+};
+
+// Helper to extract plain text string from ReactNode (used for heading IDs)
+const getNodeText = (node: React.ReactNode): string => {
+  if (node === null || node === undefined) return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(getNodeText).join('');
+  if (React.isValidElement(node) && (node.props as any)?.children) {
+    return getNodeText((node.props as any).children);
+  }
+  return '';
+};
+
+const slugify = (text: string) =>
+  text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+interface PreviewContextValue {
+  allFiles: VaultFile[];
+  taskLineMap: Map<number, number>;
+  onNavigateToFile: (filenameOrPath: string) => void;
+  onToggleCheckbox: (index: number) => void;
+}
+
+const PreviewContext = createContext<PreviewContextValue | null>(null);
+/** Task index of the nearest enclosing task list item (derived from its source line). */
+const TaskIndexContext = createContext<number | undefined>(undefined);
+
+const usePreviewContext = () => {
+  const ctx = useContext(PreviewContext);
+  if (!ctx) throw new Error('MarkdownPreview components must be rendered inside PreviewContext');
+  return ctx;
+};
+
+const TaskCheckbox: React.FC<{ checked?: boolean }> = ({ checked }) => {
+  const { onToggleCheckbox } = usePreviewContext();
+  const taskIndex = useContext(TaskIndexContext);
+  const canToggle = taskIndex !== undefined;
+  return (
+    <input
+      type="checkbox"
+      checked={Boolean(checked)}
+      disabled={!canToggle}
+      aria-label={checked ? 'Mark task as not done' : 'Mark task as done'}
+      onChange={() => {
+        if (canToggle) onToggleCheckbox(taskIndex);
+      }}
+      className="w-4 h-4 mt-0.5 rounded text-stone-900 border-stone-300 focus:ring-stone-500 cursor-pointer align-middle accent-stone-900 shrink-0 disabled:cursor-default"
+    />
+  );
+};
+
+const PreviewLink: React.FC<{ href?: string; children?: React.ReactNode }> = ({ href, children }) => {
+  const { allFiles, onNavigateToFile } = usePreviewContext();
+  if (!href) return <span>{children}</span>;
+
+  // 1. Internal Wiki-Link generated from [[WikiLinks]]
+  if (href.startsWith('wiki:')) {
+    const target = decodeURIComponent(href.slice(5));
+    const matchedFile = allFiles.find((f) => wikiTargetMatchesFile(target, f));
+
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onNavigateToFile(target);
+        }}
+        title={
+          matchedFile
+            ? `Jump to file: ${matchedFile.name} (${matchedFile.folder})`
+            : `Navigate to: ${target}`
+        }
+        className={`inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded text-xs font-mono font-medium transition-all group align-baseline cursor-pointer ${
+          matchedFile
+            ? 'bg-amber-100/70 hover:bg-amber-200/80 text-amber-950 border border-amber-300/80 hover:shadow-2xs'
+            : 'bg-stone-100 hover:bg-stone-200 text-stone-600 border border-dashed border-stone-300'
+        }`}
+      >
+        <span aria-hidden="true" className="text-amber-600 font-bold select-none text-[11px] group-hover:text-amber-700">
+          [[
+        </span>
+        <span className="font-sans font-medium text-stone-900 group-hover:underline underline-offset-2">
+          {children}
+        </span>
+        <span aria-hidden="true" className="text-amber-600 font-bold select-none text-[11px] group-hover:text-amber-700">
+          ]]
+        </span>
+        <ArrowUpRight className="w-3 h-3 text-amber-700 opacity-60 group-hover:opacity-100 shrink-0" />
+      </button>
+    );
+  }
+
+  // 2. In-document anchor (#heading-id)
+  if (href.startsWith('#')) {
+    const anchorId = href.slice(1);
+    return (
+      <a
+        href={href}
+        onClick={(e) => {
+          e.preventDefault();
+          const targetEl =
+            document.getElementById(anchorId) || document.getElementById(slugify(anchorId));
+          if (targetEl) {
+            targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          } else {
+            onNavigateToFile(anchorId);
+          }
+        }}
+        className="text-blue-600 hover:text-blue-800 underline underline-offset-2 font-medium cursor-pointer"
+      >
+        {children}
+      </a>
+    );
+  }
+
+  // 3. External web, mailto or tel URL
+  const isExternal = /^https?:\/\//i.test(href) || /^mailto:/i.test(href) || /^tel:/i.test(href);
+
+  if (isExternal) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-0.5 text-blue-600 hover:text-blue-800 underline underline-offset-2 font-medium cursor-pointer transition-colors group"
+        title={`Open external link: ${href}`}
+      >
+        <span>{children}</span>
+        <ExternalLink className="w-3 h-3 text-blue-500 opacity-70 group-hover:opacity-100 shrink-0 inline ml-0.5" />
+      </a>
+    );
+  }
+
+  // 4. Internal relative file path (e.g. "goals/ai-systems-mastery.md" or "weekly-review.md")
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const clean = href.replace(/^\.?\//, '');
+        onNavigateToFile(clean);
+      }}
+      className="inline-flex items-center gap-0.5 text-blue-600 hover:text-blue-800 underline underline-offset-2 font-medium cursor-pointer align-baseline"
+      title={`Jump to: ${href}`}
+    >
+      <span>{children}</span>
+      <ArrowUpRight className="w-3 h-3 text-blue-500 opacity-60 shrink-0 inline ml-0.5" />
+    </button>
+  );
+};
+
+const TaskListItem: React.FC<{ line?: number; children?: React.ReactNode }> = ({ line, children }) => {
+  const { taskLineMap } = usePreviewContext();
+  const taskIndex = line !== undefined ? taskLineMap.get(line) : undefined;
+  return (
+    <TaskIndexContext.Provider value={taskIndex}>
+      <li className="list-none -ml-4 flex items-start gap-2 py-0.5 text-sm text-stone-800">{children}</li>
+    </TaskIndexContext.Provider>
+  );
+};
+
+// Stable component map (module level so React never remounts rendered nodes between edits)
+const markdownComponents: Components = {
+  h1: ({ children }) => (
+    <h1
+      id={slugify(getNodeText(children))}
+      className="text-2xl font-bold tracking-tight text-stone-950 mt-6 mb-3 pb-2 border-b border-stone-200 scroll-mt-6"
+    >
+      {children}
+    </h1>
+  ),
+  h2: ({ children }) => (
+    <h2
+      id={slugify(getNodeText(children))}
+      className="text-xl font-bold tracking-tight text-stone-900 mt-5 mb-2 scroll-mt-6"
+    >
+      {children}
+    </h2>
+  ),
+  h3: ({ children }) => (
+    <h3
+      id={slugify(getNodeText(children))}
+      className="text-base font-semibold tracking-tight text-stone-900 mt-4 mb-1.5 scroll-mt-6"
+    >
+      {children}
+    </h3>
+  ),
+  h4: ({ children }) => (
+    <h4
+      id={slugify(getNodeText(children))}
+      className="text-sm font-semibold tracking-tight text-stone-900 mt-3 mb-1 scroll-mt-6"
+    >
+      {children}
+    </h4>
+  ),
+  p: ({ children }) => <p className="my-2.5 text-sm text-stone-700 leading-relaxed">{children}</p>,
+  ul: ({ children }) => (
+    <ul className="my-2 space-y-1 pl-5 list-disc text-sm text-stone-800">{children}</ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="my-2 space-y-1 pl-5 list-decimal text-sm text-stone-800">{children}</ol>
+  ),
+  li: ({ children, className, node }) => {
+    if (className?.includes('task-list-item')) {
+      return <TaskListItem line={node?.position?.start.line}>{children}</TaskListItem>;
+    }
+    return <li className="text-sm py-0.5 text-stone-800 leading-relaxed">{children}</li>;
+  },
+  input: ({ type, checked, node: _node, ...props }) => {
+    if (type === 'checkbox') {
+      return <TaskCheckbox checked={checked} />;
+    }
+    return <input type={type} checked={checked} {...props} />;
+  },
+  del: ({ children }) => <del className="line-through text-stone-400">{children}</del>,
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-4 border-stone-400 pl-4 py-1 italic my-3 text-stone-600 bg-stone-50/70 rounded-r text-sm">
+      {children}
+    </blockquote>
+  ),
+  code: ({ children, className }) => {
+    const isBlock = className && className.includes('language-');
+    if (isBlock) {
+      return (
+        <div className="relative group my-3">
+          <pre className="bg-stone-950 text-stone-100 p-3.5 rounded-lg text-xs font-mono overflow-x-auto border border-stone-800">
+            <code>{children}</code>
+          </pre>
+        </div>
+      );
+    }
+    return (
+      <code className="px-1.5 py-0.5 rounded bg-stone-100 text-stone-800 font-mono text-xs border border-stone-200">
+        {children}
+      </code>
+    );
+  },
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-5 rounded-xl border border-stone-200/90 shadow-2xs bg-white">
+      <table className="w-full min-w-full text-left border-collapse text-xs md:text-sm">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => (
+    <thead className="bg-stone-100/90 text-stone-900 border-b border-stone-200 font-semibold">{children}</thead>
+  ),
+  tbody: ({ children }) => <tbody className="divide-y divide-stone-100 bg-white">{children}</tbody>,
+  tr: ({ children, className }) => (
+    <tr className={`hover:bg-stone-50/80 transition-colors ${className || ''}`}>{children}</tr>
+  ),
+  th: ({ children, style, align, className }: any) => (
+    <th
+      style={style}
+      align={align}
+      className={`px-4 py-2.5 text-xs font-semibold text-stone-800 tracking-wider uppercase border-b border-stone-200 ${
+        className || ''
+      }`}
+    >
+      {children}
+    </th>
+  ),
+  td: ({ children, style, align, className }: any) => (
+    <td
+      style={style}
+      align={align}
+      className={`px-4 py-2.5 text-xs md:text-sm text-stone-700 align-middle leading-normal ${className || ''}`}
+    >
+      {children}
+    </td>
+  ),
+  a: ({ href, children }) => <PreviewLink href={href}>{children}</PreviewLink>,
+};
+
+const remarkPlugins = [remarkGfm];
 
 export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
   file,
@@ -35,46 +338,56 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const { frontmatter, content } = file;
+  const topFolder = getTopLevelFolder(file);
+  const isSkill = isSkillFile(file);
+
+  // Rendering markdown is the expensive part: let typing stay responsive and catch up after.
+  const deferredContent = useDeferredValue(content);
+  const deferredAllFiles = useDeferredValue(allFiles);
 
   // Strip frontmatter from preview body
-  const bodyContent = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
+  const bodyContent = useMemo(() => splitFrontmatterBlock(deferredContent).body, [deferredContent]);
 
-  const isSkill = file.folder === 'skills' || frontmatter.category === 'skills';
+  // Source line -> task index, using the same rule as toggleCheckboxInMarkdown
+  const taskLineMap = useMemo(() => getTaskLineIndexMap(bodyContent), [bodyContent]);
 
-  const copyContent = () => {
-    navigator.clipboard.writeText(content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
-  };
+  // Keep latest callbacks without invalidating the memoized markdown tree
+  const navigateRef = useRef(onNavigateToFile);
+  navigateRef.current = onNavigateToFile;
+  const toggleRef = useRef(onToggleCheckbox);
+  toggleRef.current = onToggleCheckbox;
+  const stableNavigate = useCallback((target: string) => navigateRef.current(target), []);
+  const stableToggle = useCallback((index: number) => toggleRef.current(index), []);
 
-  // Helper to extract plain text string from ReactNode (used for heading IDs)
-  const getNodeText = (node: React.ReactNode): string => {
-    if (node === null || node === undefined) return '';
-    if (typeof node === 'string' || typeof node === 'number') return String(node);
-    if (Array.isArray(node)) return node.map(getNodeText).join('');
-    if (React.isValidElement(node) && (node.props as any)?.children) {
-      return getNodeText((node.props as any).children);
+  const contextValue = useMemo<PreviewContextValue>(
+    () => ({
+      allFiles: deferredAllFiles,
+      taskLineMap,
+      onNavigateToFile: stableNavigate,
+      onToggleCheckbox: stableToggle,
+    }),
+    [deferredAllFiles, taskLineMap, stableNavigate, stableToggle]
+  );
+
+  const copyContent = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (err) {
+      console.error('Failed to copy markdown:', err);
     }
-    return '';
   };
-
-  const slugify = (text: string) =>
-    text
-      .toLowerCase()
-      .trim()
-      .replace(/[^\w\s-]/g, '')
-      .replace(/[\s_-]+/g, '-')
-      .replace(/^-+|-+$/g, '');
 
   // Preprocess [[WikiLinks]] in markdown content outside code blocks
   const processedContent = useMemo(() => {
-    const codeBlockRegex = /(```[\s\S]*?```|`[^`\r\n]*`)/g;
+    const codeBlockRegex = /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\r\n]*`)/g;
     const parts = bodyContent.split(codeBlockRegex);
 
     return parts
       .map((part) => {
         // If code block or inline code, leave unchanged
-        if (part.startsWith('`')) {
+        if (part.startsWith('`') || part.startsWith('~~~')) {
           return part;
         }
         // Replace [[target|alias]] or [[target]]
@@ -95,7 +408,29 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
       .join('');
   }, [bodyContent]);
 
-  let taskCheckboxCounter = 0;
+  const renderedMarkdown = useMemo(
+    () => (
+      <ReactMarkdown
+        remarkPlugins={remarkPlugins}
+        components={markdownComponents}
+        urlTransform={previewUrlTransform}
+      >
+        {processedContent}
+      </ReactMarkdown>
+    ),
+    [processedContent]
+  );
+
+  // Files whose [[WikiLinks]] point at this file
+  const fileTitle = frontmatter.title;
+  const backlinks = useMemo(() => {
+    const target = { name: file.name, path: file.path, frontmatter: { title: fileTitle } };
+    return deferredAllFiles
+      .filter(
+        (f) => f.id !== file.id && extractWikiLinks(f.content).some((link) => wikiTargetMatchesFile(link, target))
+      )
+      .sort((a, b) => (a.frontmatter.title || a.name).localeCompare(b.frontmatter.title || b.name));
+  }, [deferredAllFiles, file.id, file.name, file.path, fileTitle]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-white p-6 md:p-8 max-w-4xl mx-auto w-full">
@@ -105,9 +440,9 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
           <div className="flex items-center gap-2 flex-wrap">
             {/* Category Tag */}
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold uppercase tracking-wider bg-stone-200 text-stone-800">
-              {file.folder === 'goals' && <Target className="w-3 h-3 text-amber-700" />}
-              {file.folder === 'projects' && <Rocket className="w-3 h-3 text-blue-700" />}
-              {file.folder === 'skills' && <Bot className="w-3 h-3 text-emerald-700" />}
+              {topFolder === 'goals' && <Target className="w-3 h-3 text-amber-700" />}
+              {topFolder === 'projects' && <Rocket className="w-3 h-3 text-blue-700" />}
+              {topFolder === 'skills' && <Bot className="w-3 h-3 text-emerald-700" />}
               {file.folder}
             </span>
 
@@ -151,7 +486,7 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
                 className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
               >
                 <Zap className="w-3.5 h-3.5" />
-                Test Agent Skill
+                Assemble Prompt
               </button>
             )}
 
@@ -262,281 +597,41 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
 
       {/* Rendered Markdown Body with custom components */}
       <div className="prose prose-stone max-w-none text-stone-800 leading-relaxed font-sans">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          components={{
-            h1: ({ children }) => {
-              const text = getNodeText(children);
-              const id = slugify(text);
-              return (
-                <h1
-                  id={id}
-                  className="text-2xl font-bold tracking-tight text-stone-950 mt-6 mb-3 pb-2 border-b border-stone-200 scroll-mt-6"
-                >
-                  {children}
-                </h1>
-              );
-            },
-            h2: ({ children }) => {
-              const text = getNodeText(children);
-              const id = slugify(text);
-              return (
-                <h2
-                  id={id}
-                  className="text-xl font-bold tracking-tight text-stone-900 mt-5 mb-2 scroll-mt-6"
-                >
-                  {children}
-                </h2>
-              );
-            },
-            h3: ({ children }) => {
-              const text = getNodeText(children);
-              const id = slugify(text);
-              return (
-                <h3
-                  id={id}
-                  className="text-base font-semibold tracking-tight text-stone-900 mt-4 mb-1.5 scroll-mt-6"
-                >
-                  {children}
-                </h3>
-              );
-            },
-            h4: ({ children }) => {
-              const text = getNodeText(children);
-              const id = slugify(text);
-              return (
-                <h4
-                  id={id}
-                  className="text-sm font-semibold tracking-tight text-stone-900 mt-3 mb-1 scroll-mt-6"
-                >
-                  {children}
-                </h4>
-              );
-            },
-            p: ({ children }) => (
-              <p className="my-2.5 text-sm text-stone-700 leading-relaxed">{children}</p>
-            ),
-            ul: ({ children }) => (
-              <ul className="my-2 space-y-1 pl-5 list-disc text-sm text-stone-800">{children}</ul>
-            ),
-            ol: ({ children }) => (
-              <ol className="my-2 space-y-1 pl-5 list-decimal text-sm text-stone-800">{children}</ol>
-            ),
-            li: ({ children, className, ...props }: any) => {
-              const isTaskList =
-                className?.includes('task-list-item') ||
-                (props.checked !== undefined && props.checked !== null);
+        <PreviewContext.Provider value={contextValue}>{renderedMarkdown}</PreviewContext.Provider>
+      </div>
 
-              if (isTaskList) {
-                return (
-                  <li className="list-none -ml-4 flex items-start gap-2 py-0.5 text-sm text-stone-800">
-                    {children}
-                  </li>
-                );
-              }
-              return <li className="text-sm py-0.5 text-stone-800 leading-relaxed">{children}</li>;
-            },
-            input: ({ type, checked, ...props }: any) => {
-              if (type === 'checkbox') {
-                const currentIndex = taskCheckboxCounter++;
-                return (
-                  <input
-                    type="checkbox"
-                    checked={Boolean(checked)}
-                    onChange={() => onToggleCheckbox(currentIndex)}
-                    className="w-4 h-4 mt-0.5 rounded text-stone-900 border-stone-300 focus:ring-stone-500 cursor-pointer align-middle accent-stone-900 shrink-0"
-                  />
-                );
-              }
-              return <input type={type} checked={checked} {...props} />;
-            },
-            del: ({ children }) => (
-              <del className="line-through text-stone-400">{children}</del>
-            ),
-            blockquote: ({ children }) => (
-              <blockquote className="border-l-4 border-stone-400 pl-4 py-1 italic my-3 text-stone-600 bg-stone-50/70 rounded-r text-sm">
-                {children}
-              </blockquote>
-            ),
-            code: ({ children, className }) => {
-              const isBlock = className && className.includes('language-');
-              if (isBlock) {
-                return (
-                  <div className="relative group my-3">
-                    <pre className="bg-stone-950 text-stone-100 p-3.5 rounded-lg text-xs font-mono overflow-x-auto border border-stone-800">
-                      <code>{children}</code>
-                    </pre>
-                  </div>
-                );
-              }
-              return (
-                <code className="px-1.5 py-0.5 rounded bg-stone-100 text-stone-800 font-mono text-xs border border-stone-200">
-                  {children}
-                </code>
-              );
-            },
-            table: ({ children }) => (
-              <div className="overflow-x-auto my-5 rounded-xl border border-stone-200/90 shadow-2xs bg-white">
-                <table className="w-full min-w-full text-left border-collapse text-xs md:text-sm">
-                  {children}
-                </table>
-              </div>
-            ),
-            thead: ({ children }) => (
-              <thead className="bg-stone-100/90 text-stone-900 border-b border-stone-200 font-semibold">
-                {children}
-              </thead>
-            ),
-            tbody: ({ children }) => (
-              <tbody className="divide-y divide-stone-100 bg-white">
-                {children}
-              </tbody>
-            ),
-            tr: ({ children, className }: any) => (
-              <tr className={`hover:bg-stone-50/80 transition-colors ${className || ''}`}>
-                {children}
-              </tr>
-            ),
-            th: ({ children, style, align, className }: any) => (
-              <th
-                style={style}
-                align={align}
-                className={`px-4 py-2.5 text-xs font-semibold text-stone-800 tracking-wider uppercase border-b border-stone-200 ${
-                  className || ''
-                }`}
-              >
-                {children}
-              </th>
-            ),
-            td: ({ children, style, align, className }: any) => (
-              <td
-                style={style}
-                align={align}
-                className={`px-4 py-2.5 text-xs md:text-sm text-stone-700 align-middle leading-normal ${
-                  className || ''
-                }`}
-              >
-                {children}
-              </td>
-            ),
-            a: ({ href, children }) => {
-              if (!href) return <span>{children}</span>;
-
-              // 1. Internal Wiki-Link generated from [[WikiLinks]]
-              if (href.startsWith('wiki:')) {
-                const target = decodeURIComponent(href.slice(5));
-                const targetLower = target.toLowerCase();
-                const matchedFile = allFiles.find((f) => {
-                  return (
-                    f.name.toLowerCase() === targetLower ||
-                    f.name.toLowerCase() === `${targetLower}.md` ||
-                    f.path.toLowerCase() === targetLower ||
-                    f.path.toLowerCase() === `${targetLower}.md` ||
-                    f.frontmatter.title?.toLowerCase() === targetLower
-                  );
-                });
-
-                return (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onNavigateToFile(target);
-                    }}
-                    title={
-                      matchedFile
-                        ? `Jump to file: ${matchedFile.name} (${matchedFile.folder})`
-                        : `Navigate to: ${target}`
-                    }
-                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded text-xs font-mono font-medium transition-all group align-baseline cursor-pointer ${
-                      matchedFile
-                        ? 'bg-amber-100/70 hover:bg-amber-200/80 text-amber-950 border border-amber-300/80 hover:shadow-2xs'
-                        : 'bg-stone-100 hover:bg-stone-200 text-stone-600 border border-dashed border-stone-300'
-                    }`}
-                  >
-                    <span className="text-amber-600 font-bold select-none text-[11px] group-hover:text-amber-700">
-                      [[
-                    </span>
-                    <span className="font-sans font-medium text-stone-900 group-hover:underline underline-offset-2">
-                      {children}
-                    </span>
-                    <span className="text-amber-600 font-bold select-none text-[11px] group-hover:text-amber-700">
-                      ]]
-                    </span>
-                    <ArrowUpRight className="w-3 h-3 text-amber-700 opacity-60 group-hover:opacity-100 shrink-0" />
-                  </button>
-                );
-              }
-
-              // 2. In-document anchor (#heading-id)
-              if (href.startsWith('#')) {
-                const anchorId = href.slice(1);
-                return (
-                  <a
-                    href={href}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      const targetEl =
-                        document.getElementById(anchorId) ||
-                        document.getElementById(slugify(anchorId));
-                      if (targetEl) {
-                        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      } else {
-                        onNavigateToFile(anchorId);
-                      }
-                    }}
-                    className="text-blue-600 hover:text-blue-800 underline underline-offset-2 font-medium cursor-pointer"
-                  >
-                    {children}
-                  </a>
-                );
-              }
-
-              // 3. External web or mailto URL
-              const isExternal =
-                /^https?:\/\//i.test(href) ||
-                /^mailto:/i.test(href) ||
-                /^tel:/i.test(href);
-
-              if (isExternal) {
-                return (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-0.5 text-blue-600 hover:text-blue-800 underline underline-offset-2 font-medium cursor-pointer transition-colors group"
-                    title={`Open external link: ${href}`}
-                  >
-                    <span>{children}</span>
-                    <ExternalLink className="w-3 h-3 text-blue-500 opacity-70 group-hover:opacity-100 shrink-0 inline ml-0.5" />
-                  </a>
-                );
-              }
-
-              // 4. Internal relative file path (e.g. "goals/ai-systems-mastery.md" or "weekly-review.md")
-              return (
+      {/* Backlinks: files that [[link]] to this one */}
+      <section aria-labelledby="preview-backlinks-heading" className="mt-10 pt-4 border-t border-stone-200 text-xs">
+        <h2
+          id="preview-backlinks-heading"
+          className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-stone-500 mb-2"
+        >
+          <Link2 className="w-3.5 h-3.5 text-stone-400" />
+          Backlinks ({backlinks.length})
+        </h2>
+        {backlinks.length === 0 ? (
+          <p className="text-[11px] text-stone-400 italic">
+            No other files link here yet. Reference this file with [[{file.name.replace(/\.md$/, '')}]].
+          </p>
+        ) : (
+          <ul className="flex flex-wrap gap-1.5">
+            {backlinks.map((source) => (
+              <li key={source.id}>
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const clean = href.replace(/^\.?\//, '');
-                    onNavigateToFile(clean);
-                  }}
-                  className="inline-flex items-center gap-0.5 text-blue-600 hover:text-blue-800 underline underline-offset-2 font-medium cursor-pointer align-baseline"
-                  title={`Jump to: ${href}`}
+                  onClick={() => onNavigateToFile(source.path)}
+                  title={`Open ${source.path}`}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-stone-50 hover:bg-amber-50 border border-stone-200 hover:border-amber-300 text-stone-700 transition-colors cursor-pointer"
                 >
-                  <span>{children}</span>
-                  <ArrowUpRight className="w-3 h-3 text-blue-500 opacity-60 shrink-0 inline ml-0.5" />
+                  <span className="font-medium truncate max-w-[220px]">{source.frontmatter.title || source.name}</span>
+                  <span className="text-[10px] font-mono text-stone-400">/{source.folder}</span>
+                  <ArrowUpRight className="w-3 h-3 text-stone-400 shrink-0" />
                 </button>
-              );
-            },
-          }}
-        >
-          {processedContent}
-        </ReactMarkdown>
-      </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 };
