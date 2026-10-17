@@ -32,6 +32,7 @@ import { VaultFile, FileFrontmatter, DriveConnectionStatus } from '../types';
 import { MarkdownPreview } from './MarkdownPreview';
 import { parseFrontmatter, stringifyWithFrontmatter } from '../utils/markdownParser';
 import { getTodayYYMMDD } from '../utils/date';
+import { expandTodayTokens } from '../utils/expandToday';
 import { isProjectFile } from '../utils/fileKinds';
 
 const parseTags = (raw: string): string[] =>
@@ -239,35 +240,19 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     onChangeContent(textarea.value.substring(0, start) + replacement + textarea.value.substring(end));
   };
 
-  // Handles textarea content changes and expands @today to YY-MM-DD string
+  // Handles textarea content changes and expands @today to YY-MM-DD string.
+  // The caret is mapped through the replacement (it may arrive with trailing text from
+  // autocorrect/predictive input or a paste), so it never jumps to the end of the file.
   const handleContentChangeWithToday = (val: string, cursor?: number | null) => {
-    if (/@today/i.test(val)) {
-      const todayStr = getTodayYYMMDD();
-      if (typeof cursor === 'number') {
-        const beforeCursor = val.slice(0, cursor);
-        if (/@today$/i.test(beforeCursor)) {
-          const match = beforeCursor.match(/@today$/i)!;
-          const matchLen = match[0].length;
-          const newBefore = beforeCursor.slice(0, -matchLen) + todayStr;
-          const afterCursor = val.slice(cursor);
-          const replaced = newBefore + afterCursor;
-          onChangeContent(replaced);
-
-          const newCursor = newBefore.length;
-          pendingCaretRef.current = {
-            start: newCursor,
-            end: newCursor,
-            scrollTop: textareaRef.current?.scrollTop ?? 0,
-          };
-          return;
-        }
-      }
-      const replaced = val.replace(/@today/gi, todayStr);
-      onChangeContent(replaced);
+    if (!/@today/i.test(val)) {
+      onChangeContent(val);
       return;
     }
-
-    onChangeContent(val);
+    const textarea = textareaRef.current;
+    const caret = typeof cursor === 'number' ? cursor : (textarea?.selectionStart ?? val.length);
+    const { text, cursor: newCursor } = expandTodayTokens(val, caret, getTodayYYMMDD());
+    pendingCaretRef.current = { start: newCursor, end: newCursor, scrollTop: textarea?.scrollTop ?? 0 };
+    onChangeContent(text);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
