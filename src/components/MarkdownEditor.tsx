@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Heading1,
   Heading2,
@@ -91,6 +91,12 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const [isEditingFilename, setIsEditingFilename] = useState(false);
   const [editingFilenameVal, setEditingFilenameVal] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Last known caret/selection and scroll position of the source textarea. Some browsers
+  // (notably Safari/Firefox) reset these when focus moves to a toolbar control or when React
+  // rewrites the textarea value, which made the caret jump to the top after formatting.
+  const lastSelectionRef = useRef({ start: 0, end: 0, scrollTop: 0 });
+  // Caret/scroll to re-apply after React commits a programmatic content change.
+  const pendingCaretRef = useRef<{ start: number; end: number; scrollTop: number } | null>(null);
   const wikiPickerRef = useRef<HTMLDivElement>(null);
   const wikiButtonRef = useRef<HTMLButtonElement>(null);
   // Set when Escape is pressed in the editor so the next Tab moves focus instead of indenting
@@ -167,20 +173,49 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const isProject = isProjectFile(file);
 
   // Insert markdown snippet at current cursor or selection
+  // Only record while the textarea is focused: during/after blur some browsers report a
+  // reset selection (0) or scroll position, which must not overwrite the real one.
+  const rememberSelection = () => {
+    const t = textareaRef.current;
+    if (t && document.activeElement === t) {
+      lastSelectionRef.current = { start: t.selectionStart, end: t.selectionEnd, scrollTop: t.scrollTop };
+    }
+  };
+
+  // Re-apply caret and scroll after React has written a new value into the textarea,
+  // before the browser paints (so there is no visible jump).
+  useLayoutEffect(() => {
+    const pending = pendingCaretRef.current;
+    const t = textareaRef.current;
+    if (!pending || !t) return;
+    pendingCaretRef.current = null;
+    t.focus({ preventScroll: true });
+    t.setSelectionRange(pending.start, pending.end);
+    t.scrollTop = pending.scrollTop;
+    rememberSelection();
+  }, [file.content]);
+
   const insertText = (before: string, after: string = '', defaultText: string = '') => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
+    // If the textarea still has focus its live selection is authoritative; otherwise use the
+    // position remembered before focus moved away (e.g. to the wiki-link picker).
+    const live = document.activeElement === textarea;
+    const saved = lastSelectionRef.current;
+    const max = textarea.value.length;
+    const start = Math.min(live ? textarea.selectionStart : saved.start, max);
+    const end = Math.min(live ? textarea.selectionEnd : saved.end, max);
+    const scrollTop = live ? textarea.scrollTop : saved.scrollTop;
+
     const selection = textarea.value.substring(start, end) || defaultText;
     const replacement = `${before}${selection}${after}`;
-    const selectInserted = () =>
-      textarea.setSelectionRange(start + before.length, start + before.length + selection.length);
+    const selStart = start + before.length;
+    const selEnd = selStart + selection.length;
 
     // Prefer execCommand('insertText') so the edit lands on the browser's native undo stack.
     // It fires a regular input event, which flows through onChange.
-    textarea.focus();
+    textarea.focus({ preventScroll: true });
     textarea.setSelectionRange(start, end);
     let inserted: boolean;
     try {
@@ -191,17 +226,17 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     }
 
     if (inserted) {
-      selectInserted();
+      // React may still re-sync the value after this input event; restore once it commits too.
+      pendingCaretRef.current = { start: selStart, end: selEnd, scrollTop };
+      textarea.setSelectionRange(selStart, selEnd);
+      textarea.scrollTop = scrollTop;
+      rememberSelection();
       return;
     }
 
-    // Fallback: replace the content directly (no native undo)
-    const newContent = textarea.value.substring(0, start) + replacement + textarea.value.substring(end);
-    onChangeContent(newContent);
-    setTimeout(() => {
-      textarea.focus();
-      selectInserted();
-    }, 0);
+    // Fallback: replace the content directly (no native undo); caret restored in the layout effect.
+    pendingCaretRef.current = { start: selStart, end: selEnd, scrollTop };
+    onChangeContent(textarea.value.substring(0, start) + replacement + textarea.value.substring(end));
   };
 
   // Handles textarea content changes and expands @today to YY-MM-DD string
@@ -219,12 +254,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           onChangeContent(replaced);
 
           const newCursor = newBefore.length;
-          requestAnimationFrame(() => {
-            if (textareaRef.current) {
-              textareaRef.current.selectionStart = newCursor;
-              textareaRef.current.selectionEnd = newCursor;
-            }
-          });
+          pendingCaretRef.current = {
+            start: newCursor,
+            end: newCursor,
+            scrollTop: textareaRef.current?.scrollTop ?? 0,
+          };
           return;
         }
       }
@@ -304,7 +338,14 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full bg-white overflow-hidden">
       {/* Editor Sub-Header & Formatting Toolbar */}
-      <div className="border-b border-stone-200 bg-stone-50/70 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div
+        className="border-b border-stone-200 bg-stone-50/70 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs"
+        onMouseDown={(e) => {
+          // Keep focus (and the caret) in the textarea when toolbar buttons are pressed.
+          // Inputs inside the toolbar (e.g. the wiki-link filter) still receive focus normally.
+          if ((e.target as HTMLElement).closest('button')) e.preventDefault();
+        }}
+      >
         {/* Left: Toolbar Actions */}
         <div className="flex items-center gap-1 flex-wrap">
           <div className="flex items-center border border-stone-200 rounded-md bg-white p-0.5 shadow-2xs">
@@ -906,6 +947,10 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               value={file.content}
               onChange={(e) => handleContentChangeWithToday(e.target.value, e.target.selectionStart)}
               onKeyDown={handleKeyDown}
+              onSelect={rememberSelection}
+              onKeyUp={rememberSelection}
+              onMouseUp={rememberSelection}
+              onScroll={rememberSelection}
               spellCheck={false}
               aria-label={`Markdown source of ${file.path}`}
               aria-describedby="editor-keyboard-hint"
