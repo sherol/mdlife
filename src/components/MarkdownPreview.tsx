@@ -280,7 +280,7 @@ const markdownComponents: Components = {
     if (isBlock) {
       return (
         <div className="relative group my-3">
-          <pre className="bg-stone-950 text-stone-100 p-3.5 rounded-lg text-xs font-mono overflow-x-auto border border-stone-800">
+          <pre className="keep-light-palette bg-stone-950 text-stone-100 p-3.5 rounded-lg text-xs font-mono overflow-x-auto border border-stone-800">
             <code>{children}</code>
           </pre>
         </div>

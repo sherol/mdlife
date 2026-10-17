@@ -143,7 +143,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
       onClose={onClose}
       labelledBy={titleId}
       closeOnEscape={!confirmSyncOpen}
-      overlayClassName="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+      overlayClassName="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
       className="rounded-2xl border shadow-2xl max-w-lg w-full overflow-hidden transition-colors bg-white border-stone-200 text-stone-900"
     >
         {/* Header */}
@@ -414,7 +414,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
         <Modal
           onClose={() => setConfirmSyncOpen(false)}
           labelledBy={confirmTitleId}
-          overlayClassName="fixed inset-0 z-60 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-xs animate-in fade-in duration-100"
+          overlayClassName="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-100"
           className="rounded-xl border shadow-xl max-w-md w-full p-5 space-y-4 bg-white border-stone-200 text-stone-900"
         >
             <div className="flex items-center gap-2.5 text-amber-500">

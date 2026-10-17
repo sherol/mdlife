@@ -31,6 +31,7 @@ Live: https://sherol.github.io/mdlife (offline demo without Google login: https:
 - **Import / export**:
   - Drag and drop local `.md` files into the sidebar to import them.
   - Download the entire vault as a `.zip` file.
+- **Dark mode**: Follows your system theme by default; the header toggle cycles System → Light → Dark.
 - **GitHub Pages ready**: GitHub Actions workflow (`.github/workflows/deploy.yml`) builds and publishes the static site.
 
 ### Keyboard shortcuts

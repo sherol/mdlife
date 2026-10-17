@@ -74,7 +74,7 @@ export const SkillPlaygroundModal: React.FC<SkillPlaygroundModalProps> = ({
     <Modal
       onClose={onClose}
       labelledBy={titleId}
-      overlayClassName="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+      overlayClassName="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
       className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden"
     >
       {/* Modal Header */}
@@ -199,7 +199,7 @@ export const SkillPlaygroundModal: React.FC<SkillPlaygroundModalProps> = ({
                 {copiedPrompt ? 'Copied' : 'Copy Prompt'}
               </button>
             </div>
-            <pre className="p-4 bg-stone-950 text-stone-100 rounded-xl font-mono text-xs overflow-x-auto whitespace-pre-wrap leading-relaxed border border-stone-800">
+            <pre className="keep-light-palette p-4 bg-stone-950 text-stone-100 rounded-xl font-mono text-xs overflow-x-auto whitespace-pre-wrap leading-relaxed border border-stone-800">
               {resolvePrompt()}
             </pre>
           </div>

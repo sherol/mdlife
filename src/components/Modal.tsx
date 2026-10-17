@@ -56,7 +56,7 @@ export const Modal: React.FC<ModalProps> = ({
   closeOnBackdrop = true,
   closeOnEscape = true,
   initialFocusRef,
-  overlayClassName = 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-xs',
+  overlayClassName = 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs',
   className = '',
   children,
 }) => {

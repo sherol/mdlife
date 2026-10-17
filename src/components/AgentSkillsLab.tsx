@@ -243,7 +243,7 @@ export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
             model, inputs), followed by markdown headings outlining the operational guidelines, edge cases,
             and parameterized prompt templates wrapped in codeblocks.
           </p>
-          <div className="bg-stone-950 p-4 rounded-xl border border-stone-800 font-mono text-xs text-stone-300 overflow-x-auto">
+          <div className="keep-light-palette bg-stone-950 p-4 rounded-xl border border-stone-800 font-mono text-xs text-stone-300 overflow-x-auto">
             <span className="text-stone-500">---</span><br />
             <span className="text-amber-300">role</span>: Principal Technical Researcher<br />
             <span className="text-amber-300">model</span>: gemini-2.5-flash<br />

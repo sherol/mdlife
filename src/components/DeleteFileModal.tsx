@@ -27,7 +27,7 @@ export const DeleteFileModal: React.FC<DeleteFileModalProps> = ({
         if (!isDeleting) onClose();
       }}
       labelledBy={titleId}
-      overlayClassName="fixed inset-0 z-60 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-xs animate-in fade-in duration-100"
+      overlayClassName="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-100"
       className="rounded-2xl border shadow-2xl max-w-md w-full p-5 space-y-4 bg-white border-stone-200 text-stone-900"
     >
         <div className="flex items-center gap-3">

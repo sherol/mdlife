@@ -93,7 +93,7 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({ files, onSelectFil
       onClose={close}
       labelledBy={titleId}
       initialFocusRef={inputRef}
-      overlayClassName="fixed inset-0 z-60 flex items-start justify-center p-4 pt-[12vh] bg-stone-900/50 backdrop-blur-xs animate-in fade-in duration-100"
+      overlayClassName="fixed inset-0 z-60 flex items-start justify-center p-4 pt-[12vh] bg-black/50 backdrop-blur-xs animate-in fade-in duration-100"
       className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-lg w-full overflow-hidden"
     >
       <h2 id={titleId} className="sr-only">

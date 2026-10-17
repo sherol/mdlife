@@ -21,6 +21,7 @@ import { exportVaultAsZip } from '../utils/storage';
 import { getTaskProgress } from '../utils/markdownParser';
 import { SQUIRREL_FAVICON_DATA_URI } from '../utils/favicon';
 import { isArchiveFile, isGoalFile, isProjectFile, isSkillFile } from '../utils/fileKinds';
+import { ThemeToggle } from './ThemeToggle';
 
 interface VaultHeaderProps {
   files: VaultFile[];
@@ -107,7 +108,7 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         {/* Brand & Stats */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl overflow-hidden shadow-xs border border-stone-800 bg-[#111827] flex items-center justify-center shrink-0 p-0.5">
+          <div className="keep-light-palette w-10 h-10 rounded-xl overflow-hidden shadow-xs border border-stone-800 bg-[#111827] flex items-center justify-center shrink-0 p-0.5">
             <img src={SQUIRREL_FAVICON_DATA_URI} alt="" aria-hidden="true" className="w-full h-full object-contain" />
           </div>
           <div>
@@ -309,6 +310,8 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
             className="hidden"
             onChange={handleFileChange}
           />
+
+          <ThemeToggle />
 
           <button
             type="button"

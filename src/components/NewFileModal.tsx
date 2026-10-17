@@ -199,7 +199,7 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
       onClose={onClose}
       labelledBy={titleId}
       initialFocusRef={isCustomFolder ? undefined : titleInputRef}
-      overlayClassName="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+      overlayClassName="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
       className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-lg w-full overflow-hidden"
     >
         {/* Modal Header */}
