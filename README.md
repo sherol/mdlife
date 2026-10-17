@@ -178,4 +178,6 @@ To enable Google Sign-In on your published GitHub Pages URL (e.g. `https://<your
 
 ## License
 
-Apache-2.0. Feel free to fork and customize for your own workflow.
+Copyright 2026 sherol.
+
+Licensed under the [Apache License, Version 2.0](LICENSE). Feel free to fork and customize for your own workflow.
