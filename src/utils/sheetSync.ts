@@ -94,6 +94,12 @@ async function sheetsFetch(path: string, init: RequestInit = {}): Promise<any> {
     throw new Error('Google session expired (401). Please reconnect.');
   }
   if (res.status === 403 || res.status === 404) {
+    const text = await res.text();
+    if (/SERVICE_DISABLED|has not been used|is disabled/i.test(text)) {
+      throw new Error(
+        'The Google Sheets API is turned off for mdlife. Enable it in Google Cloud Console → APIs & Services, then try again.'
+      );
+    }
     throw new Error(
       `mdlife can't open this spreadsheet (${res.status}). Choose it again with "Choose SheetSync sheet" to grant access.`
     );
