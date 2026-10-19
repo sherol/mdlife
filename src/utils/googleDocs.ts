@@ -4,6 +4,8 @@
  * and converts the structural document AST to rich Markdown.
  */
 
+import firebaseConfig from '../../firebase-applet-config.json';
+
 declare global {
   interface Window {
     gapi?: any;
@@ -99,22 +101,35 @@ export function loadGooglePickerApi(): Promise<void> {
   return pickerLoadPromise;
 }
 
-/**
- * Launches the official Google Picker dialog to select a Google Doc.
- */
-export interface OpenPickerOptions {
+export interface PickedDriveFile {
+  id: string;
+  name: string;
+  url?: string;
+  mimeType?: string;
+}
+
+export interface OpenDrivePickerOptions {
   accessToken: string;
-  onDocSelected: (doc: GoogleDocMetadata) => void;
+  mimeType: string;
+  title: string;
+  onPicked: (file: PickedDriveFile) => void;
   onCancel?: () => void;
   onError?: (err: Error) => void;
 }
 
-export async function openGoogleDocsPicker({
+/**
+ * Launches the official Google Picker dialog filtered to one file type.
+ * The app ID (Cloud project number) makes the pick grant mdlife's drive.file access to that file,
+ * so it can be read and edited afterwards without broader Drive scopes.
+ */
+export async function openDrivePicker({
   accessToken,
-  onDocSelected,
+  mimeType,
+  title,
+  onPicked,
   onCancel,
   onError,
-}: OpenPickerOptions): Promise<void> {
+}: OpenDrivePickerOptions): Promise<void> {
   try {
     await loadGooglePickerApi();
 
@@ -129,23 +144,23 @@ export async function openGoogleDocsPicker({
         ? window.location.ancestorOrigins[window.location.ancestorOrigins.length - 1]
         : window.location.origin;
 
-    // Filter to Google Docs files
-    const docsView = new google.picker.DocsView(google.picker.ViewId.DOCS);
-    docsView.setMimeTypes('application/vnd.google-apps.document');
-    docsView.setMode(google.picker.DocsViewMode.LIST);
+    const view = new google.picker.DocsView(google.picker.ViewId.DOCS);
+    view.setMimeTypes(mimeType);
+    view.setMode(google.picker.DocsViewMode.LIST);
 
     const picker = new google.picker.PickerBuilder()
-      .addView(docsView)
+      .addView(view)
       .setOAuthToken(accessToken)
+      .setAppId(firebaseConfig.messagingSenderId)
       .setOrigin(pickerOrigin)
-      .setTitle('Select a Google Doc to Import into Vault')
+      .setTitle(title)
       .setCallback((data: any) => {
         if (data.action === google.picker.Action.PICKED) {
           const doc = data.docs?.[0];
           if (doc) {
-            onDocSelected({
+            onPicked({
               id: doc.id,
-              name: doc.name || 'Untitled Document',
+              name: doc.name || 'Untitled',
               url: doc.url,
               mimeType: doc.mimeType,
             });
@@ -162,6 +177,32 @@ export async function openGoogleDocsPicker({
     if (onError) onError(err);
     else throw err;
   }
+}
+
+/**
+ * Launches the official Google Picker dialog to select a Google Doc.
+ */
+export interface OpenPickerOptions {
+  accessToken: string;
+  onDocSelected: (doc: GoogleDocMetadata) => void;
+  onCancel?: () => void;
+  onError?: (err: Error) => void;
+}
+
+export function openGoogleDocsPicker({
+  accessToken,
+  onDocSelected,
+  onCancel,
+  onError,
+}: OpenPickerOptions): Promise<void> {
+  return openDrivePicker({
+    accessToken,
+    mimeType: 'application/vnd.google-apps.document',
+    title: 'Select a Google Doc to Import into Vault',
+    onPicked: onDocSelected,
+    onCancel,
+    onError,
+  });
 }
 
 /**

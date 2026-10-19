@@ -683,6 +683,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               type="button"
               id="btn-editor-shared-doc"
               onClick={onOpenSharedDoc}
+              aria-label={sharedDoc.linked ? 'Google Doc' : 'Edit in Google Docs'}
               title={
                 sharedDoc.linked
                   ? 'This note syncs with a shared Google Doc. Click for details and sharing.'
@@ -695,7 +696,6 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               }`}
             >
               <FileText className={`w-3.5 h-3.5 ${sharedDoc.syncing ? 'animate-pulse' : ''}`} />
-              <span>{sharedDoc.linked ? 'Google Doc' : 'Edit in Google Docs'}</span>
               {sharedDoc.linked && (sharedDoc.hasConflict || sharedDoc.error) && (
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500" title="Needs attention" />
               )}
@@ -708,11 +708,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               type="button"
               id="btn-editor-share-project"
               onClick={() => onShareProject(file.folder || 'projects')}
+              aria-label="Share Project"
               title="Share this project with other Google Accounts via Google Drive"
               className="flex items-center gap-1.5 px-2.5 py-1.5 border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-blue-800 rounded-md transition-colors shadow-2xs font-medium cursor-pointer"
             >
               <Share2 className="w-3.5 h-3.5 text-blue-600" />
-              <span>Share Project</span>
             </button>
           )}
 
@@ -722,11 +722,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               type="button"
               id="btn-editor-delete-file"
               onClick={() => onDeleteFile(file.id)}
+              aria-label="Delete"
               title="Delete this file permanently from vault and Google Drive"
               className="flex items-center gap-1.5 px-2.5 py-1.5 border border-red-200 bg-red-50/80 hover:bg-red-100 text-red-700 rounded-md transition-colors shadow-2xs font-medium cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5 text-red-600" />
-              <span>Delete</span>
             </button>
           )}
         </div>
