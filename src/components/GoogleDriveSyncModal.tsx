@@ -13,11 +13,19 @@ import {
   Lock,
   ExternalLink,
   RefreshCw,
+  Sheet,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { VaultFile } from '../types';
 import { syncAllFilesToDrive, importFilesFromDrive } from '../utils/googleDrive';
-import { testDriveConnection } from '../utils/googleAuth';
+import { getAccessToken, testDriveConnection } from '../utils/googleAuth';
+import {
+  getSavedSpreadsheet,
+  getSpreadsheetInfo,
+  openSheetSyncPicker,
+  saveSpreadsheet,
+  SheetSyncSpreadsheet,
+} from '../utils/sheetSync';
 import { Modal } from './Modal';
 
 interface GoogleDriveSyncModalProps {
@@ -49,6 +57,9 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; file: string } | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [confirmSyncOpen, setConfirmSyncOpen] = useState(false);
+  const [sheetSyncSheet, setSheetSyncSheet] = useState<SheetSyncSpreadsheet | null>(getSavedSpreadsheet);
+  const [sheetSyncTabs, setSheetSyncTabs] = useState<string[] | null>(null);
+  const [isPickingSheet, setIsPickingSheet] = useState(false);
   const titleId = useId();
   const confirmTitleId = useId();
 
@@ -78,6 +89,58 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
     } finally {
       setIsTestingConnection(false);
     }
+  };
+
+  const handleChooseSheetSyncSheet = async () => {
+    setStatusMessage(null);
+    const token = await getAccessToken();
+    if (!token) {
+      setStatusMessage({ type: 'error', text: 'Google Drive session expired. Please reconnect.' });
+      return;
+    }
+    setIsPickingSheet(true);
+    await openSheetSyncPicker({
+      accessToken: token,
+      onPicked: async (file) => {
+        try {
+          const info = await getSpreadsheetInfo(file.id);
+          const sheet = { id: file.id, name: info.title };
+          saveSpreadsheet(sheet);
+          setSheetSyncSheet(sheet);
+          setSheetSyncTabs(info.tabs);
+          setStatusMessage({ type: 'success', text: `mdlife can now read and edit "${info.title}".` });
+        } catch (err: any) {
+          setStatusMessage({ type: 'error', text: err?.message || 'Could not open that spreadsheet.' });
+        } finally {
+          setIsPickingSheet(false);
+        }
+      },
+      onCancel: () => setIsPickingSheet(false),
+      onError: (err) => {
+        setIsPickingSheet(false);
+        setStatusMessage({ type: 'error', text: err?.message || 'Could not open Google Picker.' });
+      },
+    });
+  };
+
+  const handleCheckSheetSyncSheet = async () => {
+    if (!sheetSyncSheet) return;
+    setStatusMessage(null);
+    setIsPickingSheet(true);
+    try {
+      const info = await getSpreadsheetInfo(sheetSyncSheet.id);
+      setSheetSyncTabs(info.tabs);
+    } catch (err: any) {
+      setStatusMessage({ type: 'error', text: err?.message || 'Could not open the SheetSync spreadsheet.' });
+    } finally {
+      setIsPickingSheet(false);
+    }
+  };
+
+  const handleForgetSheetSyncSheet = () => {
+    saveSpreadsheet(null);
+    setSheetSyncSheet(null);
+    setSheetSyncTabs(null);
   };
 
   const handleSignIn = async () => {
@@ -332,6 +395,71 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                     ├── 4. /notes/ (Notes)<br />
                     └── 5. /archive/ (Archive)
                   </div>
+                </div>
+              </div>
+
+              {/* SheetSync spreadsheet */}
+              <div className="p-3.5 rounded-xl border space-y-2 bg-emerald-50/50 border-emerald-100">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold flex items-center gap-1.5 text-emerald-700">
+                    <Sheet className="w-4 h-4" />
+                    SheetSync Spreadsheet
+                  </span>
+                  {sheetSyncSheet && (
+                    <a
+                      href={`https://docs.google.com/spreadsheets/d/${sheetSyncSheet.id}/edit`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline"
+                    >
+                      Open <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+                {sheetSyncSheet ? (
+                  <div className="text-stone-700">
+                    <strong>{sheetSyncSheet.name}</strong>
+                    {sheetSyncTabs && (
+                      <div className="text-[11px] text-stone-500 mt-0.5">Tabs: {sheetSyncTabs.join(', ')}</div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-stone-500">
+                    Choose your SheetSync spreadsheet once to let mdlife read and edit it. mdlife gets access to that
+                    one spreadsheet only.
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    id="btn-choose-sheetsync-sheet"
+                    onClick={handleChooseSheetSyncSheet}
+                    disabled={isPickingSheet}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors bg-white border-stone-200 hover:bg-stone-50 text-stone-700 disabled:opacity-50"
+                  >
+                    {isPickingSheet && <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />}
+                    {sheetSyncSheet ? 'Choose a different sheet' : 'Choose SheetSync sheet'}
+                  </button>
+                  {sheetSyncSheet && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleCheckSheetSyncSheet}
+                        disabled={isPickingSheet}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs transition-colors bg-white border-stone-200 hover:bg-stone-50 text-stone-700 disabled:opacity-50"
+                      >
+                        Check access
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleForgetSheetSyncSheet}
+                        disabled={isPickingSheet}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs transition-colors bg-white border-stone-200 hover:bg-stone-100 text-stone-600 disabled:opacity-50"
+                      >
+                        Forget
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
