@@ -6,6 +6,7 @@ import {
   RefreshCw,
   LayoutGrid,
   FileCode,
+  FileText,
   Bot,
   Target,
   Rocket,
@@ -29,6 +30,7 @@ interface VaultHeaderProps {
   onSelectTab: (tab: ActiveTab) => void;
   onOpenNewFileModal: () => void;
   onImportFiles: (files: FileList) => void;
+  onOpenImportGoogleDoc?: () => void;
   onResetVault: () => void;
   isExportingZip: boolean;
   setIsExportingZip: (v: boolean) => void;
@@ -48,6 +50,7 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
   onSelectTab,
   onOpenNewFileModal,
   onImportFiles,
+  onOpenImportGoogleDoc,
   onResetVault,
   isExportingZip,
   setIsExportingZip,
@@ -318,11 +321,24 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
             id="btn-import-md"
             onClick={() => fileInputRef.current?.click()}
             title="Import .md files"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 border border-stone-200 rounded-lg transition-colors"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 border border-stone-200 rounded-lg transition-colors cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5 text-stone-500" />
             Import .md
           </button>
+
+          {onOpenImportGoogleDoc && (
+            <button
+              type="button"
+              id="btn-import-gdoc"
+              onClick={onOpenImportGoogleDoc}
+              title="Import a Google Doc and convert to Markdown"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-blue-700 bg-blue-50/70 hover:bg-blue-100/70 border border-blue-200 rounded-lg transition-colors cursor-pointer"
+            >
+              <FileText className="w-3.5 h-3.5 text-blue-600" />
+              Import Google Doc
+            </button>
+          )}
 
           <button
             type="button"

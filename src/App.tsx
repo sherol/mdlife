@@ -34,6 +34,7 @@ import { ShareProjectModal } from './components/ShareProjectModal';
 import { DeleteFileModal } from './components/DeleteFileModal';
 import { SharedDocModal } from './components/SharedDocModal';
 import { DocConflictModal } from './components/DocConflictModal';
+import { ImportGoogleDocModal } from './components/ImportGoogleDocModal';
 import { docSyncStore, getLinkedDocId } from './utils/sharedDocs';
 
 interface AppProps {
@@ -52,6 +53,7 @@ export default function App({ forceOffline = false }: AppProps) {
   const [isExportingZip, setIsExportingZip] = useState(false);
   const [isNewFileModalOpen, setIsNewFileModalOpen] = useState(false);
   const [newFileInitialFolder, setNewFileInitialFolder] = useState<string>('goals');
+  const [isImportGoogleDocModalOpen, setIsImportGoogleDocModalOpen] = useState(false);
   const [skillForPlayground, setSkillForPlayground] = useState<VaultFile | null>(null);
   const [sharingProjectFolder, setSharingProjectFolder] = useState<string | null>(null);
   const [sharedDocFileId, setSharedDocFileId] = useState<string | null>(null);
@@ -567,6 +569,28 @@ export default function App({ forceOffline = false }: AppProps) {
     }
   };
 
+  // Import a Google Doc converted to Markdown
+  const handleGoogleDocImported = (importedFile: VaultFile) => {
+    updateFiles((prev) => [
+      importedFile,
+      ...prev.filter((f) => f.id !== importedFile.id),
+    ]);
+    markUnsaved([importedFile.id]);
+    setSelectedFileId(importedFile.id);
+    setActiveTab('editor');
+
+    if (isDriveEnabled) {
+      flushSaves([importedFile.id]).then((summary) =>
+        notifySyncSummary(summary, 'Imported from Google Docs and saved')
+      );
+    }
+
+    setToastNotification({
+      type: 'success',
+      text: `Imported "${importedFile.frontmatter.title || importedFile.name}" into ${importedFile.folder}/!`,
+    });
+  };
+
   // Initialize Starter Templates in Google Drive (always the bundled starter set, never the current cache)
   const handleInitializeDriveTemplates = async () => {
     const ok = window.confirm(
@@ -860,6 +884,10 @@ export default function App({ forceOffline = false }: AppProps) {
           setIsNewFileModalOpen(true);
         }}
         onImportFiles={handleImportFiles}
+        onOpenImportGoogleDoc={() => {
+          setNewFileInitialFolder('notes');
+          setIsImportGoogleDocModalOpen(true);
+        }}
         onResetVault={handleResetVault}
         isExportingZip={isExportingZip}
         setIsExportingZip={setIsExportingZip}
@@ -1049,6 +1077,19 @@ export default function App({ forceOffline = false }: AppProps) {
           existingFolders={Array.from(new Set(files.map((f) => f.folder)))}
           onClose={() => setIsNewFileModalOpen(false)}
           onCreateFile={handleCreateFile}
+          onOpenImportGoogleDoc={() => setIsImportGoogleDocModalOpen(true)}
+        />
+      )}
+
+      {/* Import from Google Docs Modal */}
+      {isImportGoogleDocModalOpen && (
+        <ImportGoogleDocModal
+          isOpen={isImportGoogleDocModalOpen}
+          onClose={() => setIsImportGoogleDocModalOpen(false)}
+          onImportComplete={handleGoogleDocImported}
+          googleUser={googleUser}
+          onSignIn={handleSignInWithGoogle}
+          defaultFolder={newFileInitialFolder}
         />
       )}
 

@@ -15,8 +15,10 @@ const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();
-// Request Google Drive file scope (least-privilege, standard for app-managed vault)
+// Request Google Drive and Google Docs scopes (least-privilege for vault sync, Google Picker, and Docs import)
 provider.addScope('https://www.googleapis.com/auth/drive.file');
+provider.addScope('https://www.googleapis.com/auth/drive.metadata.readonly');
+provider.addScope('https://www.googleapis.com/auth/documents.readonly');
 
 // The OAuth access token lives in memory, mirrored to sessionStorage (per tab, cleared when the
 // tab closes) so a reload doesn't force a new popup. It is never written to localStorage.

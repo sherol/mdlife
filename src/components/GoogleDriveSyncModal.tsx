@@ -257,7 +257,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
 
               <p className="text-[11px] text-stone-400 max-w-sm mx-auto flex items-center justify-center gap-1">
                 <Lock className="w-3 h-3" />
-                Uses least-privilege permission: only accesses files created with this app.
+                Uses least-privilege permission: only accesses your vault files and documents you explicitly choose to import.
               </p>
             </div>
           ) : (

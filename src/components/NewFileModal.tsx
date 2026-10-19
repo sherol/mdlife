@@ -25,6 +25,7 @@ interface NewFileModalProps {
   existingFolders: string[];
   onClose: () => void;
   onCreateFile: (folder: string, filename: string, title: string) => void;
+  onOpenImportGoogleDoc?: () => void;
 }
 
 export const NewFileModal: React.FC<NewFileModalProps> = ({
@@ -32,6 +33,7 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
   existingFolders,
   onClose,
   onCreateFile,
+  onOpenImportGoogleDoc,
 }) => {
   // Determine initial state based on initialFolder
   const getInitialState = () => {
@@ -485,23 +487,38 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
             </p>
           </div>
 
-          {/* Submit */}
-          <div className="pt-3 border-t border-stone-200 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3.5 py-2 rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100 font-medium cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              id="btn-confirm-create-file"
-              disabled={!slug.trim()}
-              className="px-4 py-2 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
-            >
-              Create File
-            </button>
+          {/* Submit & Import Actions */}
+          <div className="pt-3 border-t border-stone-200 flex items-center justify-between gap-2">
+            {onOpenImportGoogleDoc ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenImportGoogleDoc();
+                }}
+                className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 inline-flex items-center gap-1.5 font-medium cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Import from Google Docs</span>
+              </button>
+            ) : <div />}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-2 rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100 font-medium cursor-pointer text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                id="btn-confirm-create-file"
+                disabled={!slug.trim()}
+                className="px-4 py-2 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold shadow-xs disabled:opacity-50 cursor-pointer text-xs"
+              >
+                Create File
+              </button>
+            </div>
           </div>
         </form>
     </Modal>
