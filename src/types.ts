@@ -1,4 +1,4 @@
-export type FileCategory = 'goals' | 'projects' | 'skills' | 'notes' | 'archive' | 'custom';
+export type FileCategory = 'trailhead' | 'goals' | 'projects' | 'skills' | 'notes' | 'archive' | 'custom';
 
 export interface FileFrontmatter {
   title?: string;

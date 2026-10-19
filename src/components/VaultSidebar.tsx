@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Folder,
+  Footprints,
   FolderOpen,
   FileText,
   Target,
@@ -25,6 +26,7 @@ import { VaultFile, FileCategory, TaskProgress } from '../types';
 import { getTaskProgress } from '../utils/markdownParser';
 import { exportSingleFile } from '../utils/storage';
 import { STANDARD_FOLDERS, getTopLevelFolder } from '../utils/fileKinds';
+import { TRAILHEAD_FOLDER, TRAILHEAD_ID, TRAILHEAD_LABEL } from '../utils/trailhead';
 import { SubdirectoryTree, SubfolderVariant } from './SubdirectoryTree';
 import { QuickSwitcher } from './QuickSwitcher';
 
@@ -181,7 +183,9 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
   // Standard folders plus any custom top-level folders present in the vault
   const folders = useMemo(
     () =>
-      Array.from(new Set<string>([...STANDARD_FOLDERS, ...topFolderById.values()])).sort((a, b) => {
+      Array.from(new Set<string>([...STANDARD_FOLDERS, ...topFolderById.values()]))
+        .filter((folder) => folder !== TRAILHEAD_FOLDER) // rendered separately, as "0. Trailhead"
+        .sort((a, b) => {
         const orderA = folderOrder[a] ?? 50;
         const orderB = folderOrder[b] ?? 50;
         if (orderA !== orderB) {
@@ -246,6 +250,9 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
       return matchesName || matchesTitle || matchesTags || matchesContent;
     });
   }, [files, topFolderById, activeCategoryFilter, searchQuery]);
+
+  // Shown at the top when it matches the current filter/search
+  const trailheadFile = filteredFiles.find((f) => f.id === TRAILHEAD_ID);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -916,6 +923,27 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
           <div className="p-4 border-2 border-dashed border-stone-400 rounded-lg text-center text-xs text-stone-600 bg-white font-medium">
             Drop markdown files here to import into vault
           </div>
+        )}
+
+        {/* 0. Trailhead: the vault's home page (a single note, always first) */}
+        {trailheadFile && (
+          <button
+            type="button"
+            id="sidebar-trailhead"
+            onClick={() => onSelectFile(TRAILHEAD_ID)}
+            aria-current={selectedFileId === TRAILHEAD_ID ? 'page' : undefined}
+            title="Open the Trailhead (vault home page)"
+            className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md font-semibold text-xs tracking-wider uppercase cursor-pointer transition-colors ${
+              selectedFileId === TRAILHEAD_ID
+                ? 'bg-stone-900 text-white'
+                : 'text-stone-500 hover:text-stone-800 hover:bg-stone-100'
+            }`}
+          >
+            <Footprints
+              className={`w-3.5 h-3.5 shrink-0 ${selectedFileId === TRAILHEAD_ID ? 'text-white' : 'text-orange-600'}`}
+            />
+            <span>{TRAILHEAD_LABEL}</span>
+          </button>
         )}
 
         {folders.map((folder) => renderFolder(folder))}

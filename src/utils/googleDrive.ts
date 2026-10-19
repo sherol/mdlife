@@ -589,6 +589,7 @@ function normalizeTopLevelFolder(name: string): string {
   ) {
     return 'skills';
   }
+  if (nameLower.includes('trailhead')) return 'trailhead';
   if (nameLower.includes('goal')) return 'goals';
   if (nameLower.includes('project')) return 'projects';
   if (nameLower.includes('note')) return 'notes';

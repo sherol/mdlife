@@ -36,6 +36,7 @@ import { SharedDocModal } from './components/SharedDocModal';
 import { DocConflictModal } from './components/DocConflictModal';
 import { ImportGoogleDocModal } from './components/ImportGoogleDocModal';
 import { docSyncStore, getLinkedDocId } from './utils/sharedDocs';
+import { TRAILHEAD_ID, TRAILHEAD_LABEL, isTrailheadFile } from './utils/trailhead';
 
 interface AppProps {
   forceOffline?: boolean;
@@ -48,7 +49,8 @@ export default function App({ forceOffline = false }: AppProps) {
   // Instant Startup: Load cached files immediately so editor is ready with zero delay.
   // files/unsavedFileIds are mirrored into refs so the async Drive sync queue always reads the latest state.
   const [files, updateFiles, filesRef] = useRefState<VaultFile[]>(loadVaultFiles);
-  const [selectedFileId, setSelectedFileId] = useState<string | null>(() => filesRef.current[0]?.id ?? null);
+  // The app always opens on the Trailhead (the vault's home page).
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(TRAILHEAD_ID);
   const [activeTab, setActiveTab] = useState<ActiveTab>('editor');
   const [isExportingZip, setIsExportingZip] = useState(false);
   const [isNewFileModalOpen, setIsNewFileModalOpen] = useState(false);
@@ -321,6 +323,13 @@ export default function App({ forceOffline = false }: AppProps) {
   const handleDeleteFile = (id: string) => {
     const target = files.find((f) => f.id === id);
     if (!target) return;
+    if (isTrailheadFile(target)) {
+      setToastNotification({
+        type: 'info',
+        text: `${TRAILHEAD_LABEL} is the vault's home page and can't be deleted. Edit its content instead.`,
+      });
+      return;
+    }
     setFileToDelete(target);
   };
 
@@ -346,7 +355,7 @@ export default function App({ forceOffline = false }: AppProps) {
 
       // Update active selection if deleted file was open
       if (selectedFileId === target.id) {
-        setSelectedFileId(nextFiles[0]?.id || null);
+        setSelectedFileId(TRAILHEAD_ID);
       }
 
       if (isDriveEnabled) {
@@ -413,6 +422,10 @@ export default function App({ forceOffline = false }: AppProps) {
   const handleRenameFile = async (id: string, rawNewName: string): Promise<boolean> => {
     const fileToRename = filesRef.current.find((f) => f.id === id);
     if (!fileToRename) return false;
+    if (isTrailheadFile(fileToRename)) {
+      setToastNotification({ type: 'info', text: `${TRAILHEAD_LABEL} always keeps its name (README.md).` });
+      return false;
+    }
 
     // Sanitize filename
     let cleanName = rawNewName.trim().replace(/[/\\]/g, '');
@@ -600,7 +613,8 @@ export default function App({ forceOffline = false }: AppProps) {
 
     try {
       setIsRefreshingDrive(true);
-      const starterFiles = getInitialVaultFiles();
+      // The Trailhead is left out: it's created only when missing, never overwritten.
+      const starterFiles = getInitialVaultFiles().filter((f) => !isTrailheadFile(f));
       await syncAllFilesToDrive(starterFiles);
       setIsRefreshingDrive(false);
       await fetchFilesFromDrive(false);
@@ -632,7 +646,7 @@ export default function App({ forceOffline = false }: AppProps) {
       const fresh = loadVaultFiles();
       updateFiles(() => fresh);
       updateUnsaved(() => new Set());
-      setSelectedFileId(fresh[0]?.id || null);
+      setSelectedFileId(TRAILHEAD_ID);
     }
   };
 
@@ -687,7 +701,7 @@ export default function App({ forceOffline = false }: AppProps) {
     saveBypassedAuth(true);
     const localFiles = loadVaultFiles();
     updateFiles(() => localFiles);
-    setSelectedFileId(localFiles[0]?.id || null);
+    setSelectedFileId(TRAILHEAD_ID);
     setToastNotification({
       type: 'info',
       text: 'Using local storage mode. Connect Google Drive anytime from the top bar.',
@@ -1012,10 +1026,10 @@ export default function App({ forceOffline = false }: AppProps) {
                 onNavigateToFile={handleNavigateToFile}
                 onToggleCheckbox={handleToggleCheckbox}
                 onOpenSkillPlayground={(s) => setSkillForPlayground(s)}
-                onRenameFile={handleRenameFile}
+                onRenameFile={isTrailheadFile(currentFile) ? undefined : handleRenameFile}
                 onSaveToDrive={isMockMode ? undefined : handleRequestSaveFileToDrive}
                 onCopyDrivePath={handleCopyDrivePath}
-                onDeleteFile={handleDeleteFile}
+                onDeleteFile={isTrailheadFile(currentFile) ? undefined : handleDeleteFile}
                 isSavingToDrive={isSavingSingleFileToDrive}
                 isDriveSyncing={isDriveSyncing}
                 driveStatus={driveStatus}

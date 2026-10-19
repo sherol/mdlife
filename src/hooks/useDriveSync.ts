@@ -27,6 +27,7 @@ import {
   syncNoteWithDoc,
   withNoteBody,
 } from '../utils/sharedDocs';
+import { ensureTrailhead, TRAILHEAD_ID } from '../utils/trailhead';
 import { ConflictChoice, MergeResult, mergeThreeWay, normalizeMarkdown, resolveChunks } from '../utils/docMerge';
 import { subscribeDriveStatus, testDriveConnection } from '../utils/googleAuth';
 import { parseFrontmatter } from '../utils/markdownParser';
@@ -544,12 +545,14 @@ export function useDriveSync({
         unsavedRef.current,
         { pruneMissing: true, failedPaths: snapshot.failedPaths }
       );
-      updateFiles(() => merged);
+      // Every vault has a Trailhead: create it (and upload it) when Drive doesn't have one yet.
+      const withTrailhead = ensureTrailhead(merged);
+      updateFiles(() => withTrailhead.files);
+      if (withTrailhead.added) markUnsaved([TRAILHEAD_ID]);
       merged.filter((f) => getLinkedDocId(f)).forEach((f) => queueDocSync(f.id));
 
-      if (merged.length > 0) {
-        setSelectedRef.current((prev) => (prev && merged.some((f) => f.id === prev) ? prev : merged[0].id));
-      }
+      const allFiles = withTrailhead.files;
+      setSelectedRef.current((prev) => (prev && allFiles.some((f) => f.id === prev) ? prev : TRAILHEAD_ID));
 
       if (!isSilent) {
         if (snapshot.files.length === 0) {

@@ -1,3 +1,4 @@
+import { createTrailheadFile } from '../utils/trailhead';
 import { VaultFile } from '../types';
 import { parseFrontmatter } from '../utils/markdownParser';
 
@@ -525,7 +526,7 @@ All 2025 annual targets completed and preserved into cold storage. Foundational 
 
 export function getInitialVaultFiles(): VaultFile[] {
   const now = Date.now();
-  return rawFiles.map((rf) => {
+  return [createTrailheadFile(now), ...rawFiles.map((rf) => {
     const { frontmatter } = parseFrontmatter(rf.content);
     return {
       id: rf.path,
@@ -537,5 +538,5 @@ export function getInitialVaultFiles(): VaultFile[] {
       createdAt: now,
       updatedAt: now,
     };
-  });
+  })];
 }

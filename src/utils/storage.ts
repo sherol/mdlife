@@ -1,4 +1,5 @@
 import { docSyncStore } from './sharedDocs';
+import { ensureTrailhead } from './trailhead';
 import JSZip from 'jszip';
 import { VaultFile, FileCategory, PendingDriveDeletion } from '../types';
 import { getInitialVaultFiles } from '../data/initialVault';
@@ -86,7 +87,8 @@ export function loadVaultFiles(): VaultFile[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        // Vaults cached before the Trailhead existed get it added (local only; Drive sync adds it there)
+        return ensureTrailhead(parsed).files;
       }
     }
   } catch (err) {
