@@ -32,6 +32,9 @@ import { GoogleDriveStartScreen } from './components/GoogleDriveStartScreen';
 import { ReloadFromDriveModal } from './components/ReloadFromDriveModal';
 import { ShareProjectModal } from './components/ShareProjectModal';
 import { DeleteFileModal } from './components/DeleteFileModal';
+import { SharedDocModal } from './components/SharedDocModal';
+import { DocConflictModal } from './components/DocConflictModal';
+import { docSyncStore, getLinkedDocId } from './utils/sharedDocs';
 
 interface AppProps {
   forceOffline?: boolean;
@@ -51,6 +54,7 @@ export default function App({ forceOffline = false }: AppProps) {
   const [newFileInitialFolder, setNewFileInitialFolder] = useState<string>('goals');
   const [skillForPlayground, setSkillForPlayground] = useState<VaultFile | null>(null);
   const [sharingProjectFolder, setSharingProjectFolder] = useState<string | null>(null);
+  const [sharedDocFileId, setSharedDocFileId] = useState<string | null>(null);
   const [fileToDelete, setFileToDelete] = useState<VaultFile | null>(null);
   const [isDeletingFile, setIsDeletingFile] = useState(false);
 
@@ -84,6 +88,13 @@ export default function App({ forceOffline = false }: AppProps) {
     resetSyncState,
     refreshFromDrive: fetchFilesFromDrive,
     mergeImportedFiles,
+    sharedDocStatus,
+    docConflict,
+    docConflictIds,
+    shareNoteAsGoogleDoc,
+    unlinkSharedDoc,
+    syncSharedDocNow,
+    resolveDocConflict,
   } = useDriveSync({
     enabled: isDriveEnabled,
     driveStatus,
@@ -96,6 +107,7 @@ export default function App({ forceOffline = false }: AppProps) {
     updateUnsaved,
     setSelectedFileId,
     notify: setToastNotification,
+    activeFileId: selectedFileId,
   });
 
   // CRITICAL PERSISTENCE: Save unsavedFileIds to localStorage so dirty edits survive refresh
@@ -327,6 +339,9 @@ export default function App({ forceOffline = false }: AppProps) {
         return next;
       });
 
+      // The shared Google Doc (if any) is left in Drive; only the local sync state is dropped.
+      docSyncStore.remove(target.id);
+
       // Update active selection if deleted file was open
       if (selectedFileId === target.id) {
         setSelectedFileId(nextFiles[0]?.id || null);
@@ -497,6 +512,7 @@ export default function App({ forceOffline = false }: AppProps) {
       return next;
     });
 
+    docSyncStore.rename(id, newId);
     if (selectedFileId === id) {
       setSelectedFileId(newId);
     }
@@ -979,6 +995,18 @@ export default function App({ forceOffline = false }: AppProps) {
                 onReconnectDrive={handleReconnectDrive}
                 googleUser={googleUser}
                 onShareProject={(folder) => setSharingProjectFolder(folder)}
+                sharedDoc={
+                  isMockMode
+                    ? undefined
+                    : {
+                        linked: !!getLinkedDocId(currentFile),
+                        syncing: sharedDocStatus[currentFile.id]?.syncing,
+                        error: sharedDocStatus[currentFile.id]?.error,
+                        hasConflict: docConflictIds.has(currentFile.id),
+                      }
+                }
+                onOpenSharedDoc={() => setSharedDocFileId(currentFile.id)}
+                onResolveDocConflict={() => syncSharedDocNow(currentFile.id)}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center bg-white text-stone-400">
@@ -1065,6 +1093,34 @@ export default function App({ forceOffline = false }: AppProps) {
           driveStatus={driveStatus}
           isMockMode={isMockMode}
           onOpenConnectDrive={() => setIsDriveModalOpen(true)}
+        />
+      )}
+
+      {/* Shared Google Doc (edit together) */}
+      {sharedDocFileId && files.some((f) => f.id === sharedDocFileId) && (
+        <SharedDocModal
+          file={files.find((f) => f.id === sharedDocFileId)!}
+          onClose={() => setSharedDocFileId(null)}
+          isConnected={isDriveEnabled && driveStatus === 'connected'}
+          status={sharedDocStatus[sharedDocFileId]}
+          hasConflict={docConflictIds.has(sharedDocFileId)}
+          onCreate={(email, notify) => shareNoteAsGoogleDoc(sharedDocFileId, email, notify)}
+          onSyncNow={() => syncSharedDocNow(sharedDocFileId)}
+          onUnlink={() => unlinkSharedDoc(sharedDocFileId)}
+          onResolveConflict={() => {
+            setSharedDocFileId(null);
+            syncSharedDocNow(sharedDocFileId);
+          }}
+        />
+      )}
+
+      {/* Overlapping edits between a note and its shared Google Doc */}
+      {docConflict && (
+        <DocConflictModal
+          key={`${docConflict.fileId}:${docConflict.version}`}
+          conflict={docConflict}
+          fileName={files.find((f) => f.id === docConflict.fileId)?.name || docConflict.fileId}
+          onResolve={resolveDocConflict}
         />
       )}
 

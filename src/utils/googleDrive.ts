@@ -856,3 +856,90 @@ export async function removeProjectPermission(
   return true;
 }
 
+
+// ---------------------------------------------------------------------------
+// Shared Google Docs (a note mirrored to a Google Doc that someone else edits in Docs)
+// ---------------------------------------------------------------------------
+
+const GOOGLE_DOC_MIME = 'application/vnd.google-apps.document';
+
+export interface SharedDocMeta {
+  id: string;
+  name: string;
+  /** Increments on every change to the doc (ours or theirs). */
+  version: string;
+  modifiedTime?: string;
+  webViewLink?: string;
+  trashed?: boolean;
+}
+
+const DOC_META_FIELDS = 'id,name,version,modifiedTime,webViewLink,trashed';
+
+/** Returns the doc's metadata, or null when it no longer exists / is not accessible. */
+export async function getSharedDocMeta(docId: string): Promise<SharedDocMeta | null> {
+  try {
+    const res = await driveFetch(`files/${encodeURIComponent(docId)}?fields=${DOC_META_FIELDS}`);
+    return await res.json();
+  } catch (err) {
+    if (isNotFound(err)) return null;
+    throw err;
+  }
+}
+
+/** Exports a Google Doc as Markdown (Google converts headings, lists, tables, links, ...). */
+export async function exportDocAsMarkdown(docId: string): Promise<string> {
+  const res = await driveFetch(
+    `files/${encodeURIComponent(docId)}/export?mimeType=${encodeURIComponent('text/markdown')}`
+  );
+  return res.text();
+}
+
+/**
+ * Creates a Google Doc from markdown in the note's vault folder. Drive converts the markdown
+ * into native Docs formatting.
+ */
+export async function createSharedDoc(title: string, folder: string, markdown: string): Promise<SharedDocMeta> {
+  const parentId = await resolveDriveFolderId(folder, await getVaultRootId());
+  const boundary = `mdlife-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const metadata = { name: title, parents: [parentId], mimeType: GOOGLE_DOC_MIME };
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\nContent-Type: text/markdown; charset=UTF-8\r\n\r\n${markdown}\r\n` +
+    `--${boundary}--`;
+  const res = await driveFetch(
+    `${UPLOAD_API}files?uploadType=multipart&fields=${encodeURIComponent(DOC_META_FIELDS)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body,
+    }
+  );
+  return res.json();
+}
+
+/**
+ * Replaces the whole content of a Google Doc with converted markdown.
+ * (Drive can only replace a doc's content as a whole; Docs keeps the old one in version history.)
+ */
+export async function replaceSharedDocContent(docId: string, markdown: string): Promise<SharedDocMeta> {
+  const res = await driveFetch(
+    `${UPLOAD_API}files/${encodeURIComponent(docId)}?uploadType=media&fields=${encodeURIComponent(DOC_META_FIELDS)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
+      body: markdown,
+    }
+  );
+  return res.json();
+}
+
+/** Lists the people a file (e.g. a shared doc) is shared with. */
+export async function getFilePermissions(fileId: string): Promise<DrivePermission[]> {
+  const res = await driveFetch(
+    `files/${encodeURIComponent(fileId)}/permissions?fields=${encodeURIComponent(
+      'permissions(id,type,role,emailAddress,displayName,photoLink)'
+    )}`
+  );
+  const data = await res.json();
+  return Array.isArray(data.permissions) ? data.permissions : [];
+}

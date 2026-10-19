@@ -1,3 +1,4 @@
+import { docSyncStore } from './sharedDocs';
 import JSZip from 'jszip';
 import { VaultFile, FileCategory, PendingDriveDeletion } from '../types';
 import { getInitialVaultFiles } from '../data/initialVault';
@@ -148,6 +149,7 @@ export function clearAllVaultStorage(): void {
   } catch {
     // ignore
   }
+  docSyncStore.clear();
 }
 
 /**

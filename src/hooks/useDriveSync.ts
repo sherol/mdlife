@@ -8,12 +8,54 @@ import {
   subscribeDriveSaves,
   DriveAuthError,
   DriveConflictError,
+  withDriveFileLock,
+  getSharedDocMeta,
+  exportDocAsMarkdown,
+  replaceSharedDocContent,
+  createSharedDoc,
+  shareProjectWithGoogleAccount,
+  SharedDocMeta,
 } from '../utils/googleDrive';
+import {
+  DocApi,
+  docSyncStore,
+  getDocTitle,
+  getLinkedDocId,
+  getNoteBody,
+  setLinkedDocId,
+  stateAfterConflictResolution,
+  syncNoteWithDoc,
+  withNoteBody,
+} from '../utils/sharedDocs';
+import { ConflictChoice, MergeResult, mergeThreeWay, normalizeMarkdown, resolveChunks } from '../utils/docMerge';
 import { subscribeDriveStatus, testDriveConnection } from '../utils/googleAuth';
 import { parseFrontmatter } from '../utils/markdownParser';
 import { loadPendingDeletions, savePendingDeletions, flushScheduledVaultSave } from '../utils/storage';
 
 const AUTOSAVE_DELAY_MS = 1200;
+/** How often an open shared note checks its Google Doc for the other person's edits. */
+const SHARED_DOC_POLL_MS = 30_000;
+
+const docApi: DocApi = {
+  getMeta: getSharedDocMeta,
+  exportMarkdown: exportDocAsMarkdown,
+  replaceContent: replaceSharedDocContent,
+};
+
+/** Overlapping edits between the note and its Google Doc, waiting for the user to choose. */
+export interface DocConflict {
+  fileId: string;
+  docId: string;
+  merge: MergeResult;
+  remoteBody: string;
+  version: string;
+}
+
+export interface SharedDocStatus {
+  syncing?: boolean;
+  syncedAt?: number;
+  error?: string;
+}
 
 export type ToastFn = (toast: { text: string; type: 'success' | 'info' | 'error' }) => void;
 
@@ -41,6 +83,8 @@ interface UseDriveSyncOptions {
   updateUnsaved: (updater: (prev: Set<string>) => Set<string>) => void;
   setSelectedFileId: (updater: (prev: string | null) => string | null) => void;
   notify: ToastFn;
+  /** The note open in the editor (shared notes are kept in sync with their Google Doc while open). */
+  activeFileId?: string | null;
 }
 
 /**
@@ -111,11 +155,15 @@ export function useDriveSync({
   updateUnsaved,
   setSelectedFileId,
   notify,
+  activeFileId,
 }: UseDriveSyncOptions) {
   const [isDriveSyncing, setIsDriveSyncing] = useState(false);
   const [isRefreshingDrive, setIsRefreshingDrive] = useState(false);
   const [isLoadingDriveFiles, setIsLoadingDriveFiles] = useState(false);
   const [pendingDeletionCount, setPendingDeletionCount] = useState(() => loadPendingDeletions().length);
+  const [docConflict, setDocConflict] = useState<DocConflict | null>(null);
+  const [docConflictIds, setDocConflictIds] = useState<Set<string>>(() => new Set());
+  const [sharedDocStatus, setSharedDocStatus] = useState<Record<string, SharedDocStatus>>({});
 
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
@@ -245,7 +293,107 @@ export function useDriveSync({
     });
   };
 
+  // -------------------------------------------------------------------------
+  // Notes shared via Google Docs
+  // -------------------------------------------------------------------------
+
+  const conflictIdsRef = useRef<Set<string>>(new Set());
+  const missingDocNotifiedRef = useRef<Set<string>>(new Set());
+
+  const setDocStatus = (id: string, status: SharedDocStatus) =>
+    setSharedDocStatus((prev) => ({ ...prev, [id]: { ...prev[id], ...status } }));
+
+  const setConflictFlag = (id: string, flagged: boolean) => {
+    if (flagged) conflictIdsRef.current.add(id);
+    else conflictIdsRef.current.delete(id);
+    setDocConflictIds(new Set(conflictIdsRef.current));
+  };
+
+  /**
+   * Writes a new body (from the Google Doc) into the note. If the note was edited while the doc
+   * was being fetched, those edits are merged in too; returns false when that isn't possible
+   * cleanly (the next sync retries).
+   */
+  const applyDocBody = (id: string, fromBody: string, newBody: string): boolean => {
+    const current = filesRef.current.find((f) => f.id === id);
+    if (!current) return false;
+    const currentBody = normalizeMarkdown(getNoteBody(current.content));
+    let finalBody = newBody;
+    if (currentBody !== fromBody) {
+      const m = mergeThreeWay(fromBody, currentBody, newBody);
+      if (m.conflictCount > 0) return false;
+      finalBody = m.text;
+    }
+    if (finalBody === currentBody) return true;
+    const content = withNoteBody(current.content, finalBody);
+    updateFiles((prev) => prev.map((f) => (f.id === id ? { ...f, content, updatedAt: Date.now() } : f)));
+    markUnsaved([id]);
+    return true;
+  };
+
+  /** Syncs one shared note with its Google Doc (pull + merge + push). */
+  const syncSharedNote = async (id: string, force = false): Promise<'ok' | 'auth'> => {
+    const file = filesRef.current.find((f) => f.id === id);
+    const docId = getLinkedDocId(file);
+    if (!file || !docId) return 'ok';
+    if (conflictIdsRef.current.has(id) && !force) return 'ok';
+
+    setDocStatus(id, { syncing: true });
+    try {
+      const outcome = await withDriveFileLock(`doc:${id}`, () =>
+        syncNoteWithDoc(docId, file.content, docSyncStore.get(id, docId), unsavedRef.current.has(id), docApi)
+      );
+
+      if (outcome.kind === 'missing') {
+        setDocStatus(id, { syncing: false, error: 'The linked Google Doc was deleted or is no longer accessible.' });
+        if (!missingDocNotifiedRef.current.has(id)) {
+          missingDocNotifiedRef.current.add(id);
+          notifyRef.current({
+            type: 'error',
+            text: `The Google Doc linked to "${file.name}" was deleted or can't be opened. The note itself is unchanged.`,
+          });
+        }
+        return 'ok';
+      }
+
+      if (outcome.kind === 'conflict') {
+        setConflictFlag(id, true);
+        setDocConflict({
+          fileId: id,
+          docId,
+          merge: outcome.merge,
+          remoteBody: outcome.remoteBody,
+          version: outcome.version,
+        });
+        setDocStatus(id, { syncing: false });
+        return 'ok';
+      }
+
+      setConflictFlag(id, false);
+      // Only record the new sync point once the note actually reflects it.
+      if (outcome.body === undefined || applyDocBody(id, outcome.localBody, outcome.body)) {
+        docSyncStore.set(id, outcome.state);
+      }
+      missingDocNotifiedRef.current.delete(id);
+      setDocStatus(id, { syncing: false, syncedAt: Date.now(), error: undefined });
+    } catch (err: any) {
+      setDocStatus(id, { syncing: false });
+      if (err instanceof DriveAuthError) return 'auth';
+      console.error(`Google Doc sync failed for ${file.name}:`, err);
+      setDocStatus(id, { error: err?.message || 'Could not sync with the Google Doc.' });
+    }
+    return 'ok';
+  };
+
   const saveOne = async (id: string): Promise<'ok' | 'auth'> => {
+    if (getLinkedDocId(filesRef.current.find((f) => f.id === id))) {
+      // Shared note: exchange changes with its Google Doc first, then save the vault copy.
+      if ((await syncSharedNote(id)) === 'auth') {
+        resultsRef.current.set(id, 'auth');
+        pendingSavesRef.current.add(id);
+        return 'auth';
+      }
+    }
     const file = filesRef.current.find((f) => f.id === id);
     if (!file || !unsavedRef.current.has(id)) {
       resultsRef.current.set(id, 'saved');
@@ -367,6 +515,19 @@ export function useDriveSync({
     setPendingDeletionCount(0);
   }, []);
 
+  /** Runs a Google Doc sync for one shared note through the serialized queue. */
+  const queueDocSync = useCallback((id: string, force = false): Promise<void> => {
+    const run = chainRef.current
+      .then(async () => {
+        if (!canSync()) return;
+        if ((await syncSharedNote(id, force)) === 'auth') handleAuthFailure();
+      })
+      .catch((err) => console.error('Shared doc sync error:', err));
+    chainRef.current = run;
+    return run;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /**
    * Fetches the full vault from Google Drive and safely merges it with local edits so work is never lost.
    */
@@ -384,6 +545,7 @@ export function useDriveSync({
         { pruneMissing: true, failedPaths: snapshot.failedPaths }
       );
       updateFiles(() => merged);
+      merged.filter((f) => getLinkedDocId(f)).forEach((f) => queueDocSync(f.id));
 
       if (merged.length > 0) {
         setSelectedRef.current((prev) => (prev && merged.some((f) => f.id === prev) ? prev : merged[0].id));
@@ -426,6 +588,7 @@ export function useDriveSync({
       setIsRefreshingDrive(false);
       setIsLoadingDriveFiles(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filesRef, unsavedRef, updateFiles]);
 
   /** Merges files imported elsewhere (e.g. the Drive modal) without dropping any local files. */
@@ -436,6 +599,98 @@ export function useDriveSync({
       setSelectedRef.current((prev) => prev || driveFiles[0].id);
     }
   }, [filesRef, unsavedRef, updateFiles]);
+
+  /** Creates a Google Doc from the note, links them, and optionally shares it as editor. */
+  const shareNoteAsGoogleDoc = useCallback(
+    async (id: string, email?: string, sendNotificationEmail = true): Promise<SharedDocMeta> => {
+      const file = filesRef.current.find((f) => f.id === id);
+      if (!file) throw new Error('Note not found.');
+      if (!canSync()) throw new Error('Connect Google Drive first.');
+      const body = normalizeMarkdown(getNoteBody(file.content));
+      const meta = await createSharedDoc(getDocTitle(file), file.folder, body);
+      const exported = normalizeMarkdown(await exportDocAsMarkdown(meta.id));
+      docSyncStore.set(id, {
+        docId: meta.id,
+        version: meta.version,
+        docBase: exported,
+        localBase: body,
+        syncedAt: Date.now(),
+      });
+      const content = setLinkedDocId(file.content, meta.id);
+      updateFiles((prev) =>
+        prev.map((f) =>
+          f.id === id ? { ...f, content, frontmatter: parseFrontmatter(content).frontmatter, updatedAt: Date.now() } : f
+        )
+      );
+      markUnsaved([id]);
+      setDocStatus(id, { syncedAt: Date.now(), error: undefined });
+      if (email?.trim()) {
+        await shareProjectWithGoogleAccount(meta.id, email, 'writer', sendNotificationEmail);
+      }
+      flushSaves([id]);
+      return meta;
+       
+    },
+    [filesRef, updateFiles, markUnsaved, flushSaves]
+  );
+
+  /** Stops syncing a note with its Google Doc (the doc itself is left untouched). */
+  const unlinkSharedDoc = useCallback(
+    (id: string) => {
+      const file = filesRef.current.find((f) => f.id === id);
+      if (!file) return;
+      const content = setLinkedDocId(file.content, null);
+      updateFiles((prev) =>
+        prev.map((f) =>
+          f.id === id ? { ...f, content, frontmatter: parseFrontmatter(content).frontmatter, updatedAt: Date.now() } : f
+        )
+      );
+      docSyncStore.remove(id);
+      setConflictFlag(id, false);
+      markUnsaved([id]);
+       
+    },
+    [filesRef, updateFiles, markUnsaved]
+  );
+
+  /** Applies the user's choices for each overlapping edit, or (null) postpones the decision. */
+  const resolveDocConflict = useCallback(
+    (choices: ConflictChoice[] | null) => {
+      const conflict = docConflict;
+      setDocConflict(null);
+      if (!conflict || !choices) return;
+      const file = filesRef.current.find((f) => f.id === conflict.fileId);
+      if (!file) return;
+      const resolved = resolveChunks(conflict.merge.chunks, choices);
+      docSyncStore.set(conflict.fileId, stateAfterConflictResolution(conflict.docId, conflict.remoteBody, conflict.version));
+      const content = withNoteBody(file.content, resolved);
+      updateFiles((prev) => prev.map((f) => (f.id === conflict.fileId ? { ...f, content, updatedAt: Date.now() } : f)));
+      setConflictFlag(conflict.fileId, false);
+      markUnsaved([conflict.fileId]);
+      flushSaves([conflict.fileId]);
+       
+    },
+    [docConflict, filesRef, updateFiles, markUnsaved, flushSaves]
+  );
+
+  // Keep the open shared note in step with its Google Doc: on open, on focus, and periodically.
+  const activeDocId = getLinkedDocId(files.find((f) => f.id === activeFileId));
+  useEffect(() => {
+    if (!enabled || driveStatus !== 'connected' || !activeFileId || !activeDocId) return;
+    const id = activeFileId;
+    queueDocSync(id);
+    const tick = () => {
+      if (document.visibilityState === 'visible') queueDocSync(id);
+    };
+    const timer = setInterval(tick, SHARED_DOC_POLL_MS);
+    window.addEventListener('focus', tick);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', tick);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [enabled, driveStatus, activeFileId, activeDocId, queueDocSync]);
 
   // Debounced autosave (and retry of pending deletions) while connected.
   useEffect(() => {
@@ -549,5 +804,13 @@ export function useDriveSync({
     resetSyncState,
     refreshFromDrive,
     mergeImportedFiles,
+    // Notes shared via Google Docs
+    sharedDocStatus,
+    docConflict,
+    docConflictIds,
+    shareNoteAsGoogleDoc,
+    unlinkSharedDoc,
+    syncSharedDocNow: (id: string) => queueDocSync(id, true),
+    resolveDocConflict,
   };
 }

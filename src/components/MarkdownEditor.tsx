@@ -24,6 +24,7 @@ import {
   Search,
   Calendar,
   Share2,
+  FileText,
   Copy,
   Trash2,
 } from 'lucide-react';
@@ -63,6 +64,10 @@ interface MarkdownEditorProps {
   onReconnectDrive?: () => void;
   googleUser?: User | null;
   onShareProject?: (projectFolder: string) => void;
+  /** Sync state when this note is shared as a Google Doc (undefined = feature unavailable). */
+  sharedDoc?: { linked: boolean; syncing?: boolean; hasConflict: boolean; error?: string };
+  onOpenSharedDoc?: () => void;
+  onResolveDocConflict?: () => void;
 }
 
 export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
@@ -83,6 +88,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   onReconnectDrive,
   googleUser,
   onShareProject,
+  sharedDoc,
+  onOpenSharedDoc,
+  onResolveDocConflict,
 }) => {
   const [viewMode, setViewMode] = useState<'split' | 'edit' | 'preview'>('split');
   const [showMetadataDrawer, setShowMetadataDrawer] = useState(false);
@@ -185,15 +193,47 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
   // Re-apply caret and scroll after React has written a new value into the textarea,
   // before the browser paints (so there is no visible jump).
+  // Content last sent from this editor; anything else arriving in file.content came from outside
+  // (e.g. the other person's edits merged in from a shared Google Doc).
+  const lastLocalContentRef = useRef(file.content);
+  const prevContentRef = useRef(file.content);
+
   useLayoutEffect(() => {
+    const prev = prevContentRef.current;
+    prevContentRef.current = file.content;
     const pending = pendingCaretRef.current;
     const t = textareaRef.current;
-    if (!pending || !t) return;
-    pendingCaretRef.current = null;
-    t.focus({ preventScroll: true });
-    t.setSelectionRange(pending.start, pending.end);
-    t.scrollTop = pending.scrollTop;
-    rememberSelection();
+    if (!t) return;
+    if (pending) {
+      pendingCaretRef.current = null;
+      t.focus({ preventScroll: true });
+      t.setSelectionRange(pending.start, pending.end);
+      t.scrollTop = pending.scrollTop;
+      rememberSelection();
+      return;
+    }
+    if (file.content === lastLocalContentRef.current || file.content === prev) return;
+    lastLocalContentRef.current = file.content;
+    // External change: keep the caret on the same text by mapping it through the edit
+    // (unchanged prefix/suffix), instead of letting it jump to the end.
+    if (document.activeElement !== t) return;
+    const next = file.content;
+    let prefix = 0;
+    while (prefix < prev.length && prefix < next.length && prev[prefix] === next[prefix]) prefix++;
+    let suffix = 0;
+    while (
+      suffix < prev.length - prefix &&
+      suffix < next.length - prefix &&
+      prev[prev.length - 1 - suffix] === next[next.length - 1 - suffix]
+    ) {
+      suffix++;
+    }
+    const delta = next.length - prev.length;
+    const mapPos = (pos: number) =>
+      pos <= prefix ? pos : pos >= prev.length - suffix ? pos + delta : next.length - suffix;
+    const saved = lastSelectionRef.current;
+    t.setSelectionRange(mapPos(saved.start), mapPos(saved.end));
+    t.scrollTop = saved.scrollTop;
   }, [file.content]);
 
   const insertText = (before: string, after: string = '', defaultText: string = '') => {
@@ -245,6 +285,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   // autocorrect/predictive input or a paste), so it never jumps to the end of the file.
   const handleContentChangeWithToday = (val: string, cursor?: number | null) => {
     if (!/@today/i.test(val)) {
+      lastLocalContentRef.current = val;
       onChangeContent(val);
       return;
     }
@@ -252,6 +293,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     const caret = typeof cursor === 'number' ? cursor : (textarea?.selectionStart ?? val.length);
     const { text, cursor: newCursor } = expandTodayTokens(val, caret, getTodayYYMMDD());
     pendingCaretRef.current = { start: newCursor, end: newCursor, scrollTop: textarea?.scrollTop ?? 0 };
+    lastLocalContentRef.current = text;
     onChangeContent(text);
   };
 
@@ -635,6 +677,31 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             </button>
           )}
 
+          {/* Edit together via a shared Google Doc */}
+          {sharedDoc && onOpenSharedDoc && (
+            <button
+              type="button"
+              id="btn-editor-shared-doc"
+              onClick={onOpenSharedDoc}
+              title={
+                sharedDoc.linked
+                  ? 'This note syncs with a shared Google Doc. Click for details and sharing.'
+                  : 'Share this note as a Google Doc that someone else can edit in Google Docs'
+              }
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 border rounded-md transition-colors shadow-2xs font-medium cursor-pointer ${
+                sharedDoc.linked
+                  ? 'border-emerald-200 bg-emerald-50/80 hover:bg-emerald-100 text-emerald-800'
+                  : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
+              }`}
+            >
+              <FileText className={`w-3.5 h-3.5 ${sharedDoc.syncing ? 'animate-pulse' : ''}`} />
+              <span>{sharedDoc.linked ? 'Google Doc' : 'Edit in Google Docs'}</span>
+              {sharedDoc.linked && (sharedDoc.hasConflict || sharedDoc.error) && (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" title="Needs attention" />
+              )}
+            </button>
+          )}
+
           {/* Share Project with other Google Accounts button */}
           {isProject && onShareProject && (
             <button
@@ -926,6 +993,23 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               )}
               <span className="hidden sm:inline">Source Markdown (YAML Frontmatter + Content)</span>
             </div>
+            {sharedDoc?.hasConflict && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <span className="flex-1">
+                  You and the other editor changed the same lines in the shared Google Doc. Syncing is paused for this note.
+                </span>
+                {onResolveDocConflict && (
+                  <button
+                    type="button"
+                    onClick={onResolveDocConflict}
+                    className="px-2 py-0.5 rounded-md bg-amber-600 text-white font-semibold hover:bg-amber-700 cursor-pointer"
+                  >
+                    Resolve
+                  </button>
+                )}
+              </div>
+            )}
             <textarea
               ref={textareaRef}
               id="markdown-source-textarea"
