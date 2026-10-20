@@ -15,7 +15,13 @@ import {
 } from './utils/storage';
 import { parseFrontmatter, toggleCheckboxInMarkdown, updateWikiLinks } from './utils/markdownParser';
 import { initAuth, googleSignIn, logout, subscribeDriveStatus, testDriveConnection } from './utils/googleAuth';
-import { renameFileInDrive, syncAllFilesToDrive, resetDriveCaches } from './utils/googleDrive';
+import {
+  renameFileInDrive,
+  syncAllFilesToDrive,
+  resetDriveCaches,
+  backupVaultToDrive,
+  DriveAuthError,
+} from './utils/googleDrive';
 import { isDriveSyncDisabled } from './utils/storageKeys';
 import { getInitialVaultFiles } from './data/initialVault';
 import { useRefState } from './hooks/useRefState';
@@ -59,6 +65,7 @@ export default function App({ forceOffline = false }: AppProps) {
   const [skillForPlayground, setSkillForPlayground] = useState<VaultFile | null>(null);
   const [sharingProjectFolder, setSharingProjectFolder] = useState<string | null>(null);
   const [sharedDocFileId, setSharedDocFileId] = useState<string | null>(null);
+  const [backupProgress, setBackupProgress] = useState<string | null>(null);
   const [fileToDelete, setFileToDelete] = useState<VaultFile | null>(null);
   const [isDeletingFile, setIsDeletingFile] = useState(false);
 
@@ -644,6 +651,34 @@ export default function App({ forceOffline = false }: AppProps) {
     }
   };
 
+  // Snapshot every file (current local content, unsaved edits included) to backup/<date time>/ in Drive
+  const handleBackupVault = async () => {
+    if (backupProgress !== null) return;
+    if (!isDriveEnabled || driveStatus !== 'connected') {
+      setToastNotification({ type: 'error', text: 'Connect Google Drive to make a backup.' });
+      return;
+    }
+    const snapshot = filesRef.current;
+    setBackupProgress(`0/${snapshot.length}`);
+    try {
+      const res = await backupVaultToDrive(snapshot, (done, total) => setBackupProgress(`${done}/${total}`));
+      setToastNotification(
+        res.failed.length === 0
+          ? { type: 'success', text: `Backed up ${res.saved} files to ${res.path}/ in Google Drive.` }
+          : {
+              type: 'error',
+              text: `Backed up ${res.saved} files to ${res.path}/; ${res.failed.length} failed (${res.failed.slice(0, 3).join(', ')}${res.failed.length > 3 ? ', …' : ''}).`,
+            }
+      );
+    } catch (err: any) {
+      console.error('Backup failed:', err);
+      if (err instanceof DriveAuthError) setDriveStatus('expired');
+      setToastNotification({ type: 'error', text: `Backup failed: ${err?.message || 'unknown error'}` });
+    } finally {
+      setBackupProgress(null);
+    }
+  };
+
   // Reset to defaults
   const handleResetVault = () => {
     if (googleUser) {
@@ -927,6 +962,8 @@ export default function App({ forceOffline = false }: AppProps) {
         onSyncAllUnsaved={handleSyncAllUnsaved}
         isRefreshingDrive={isRefreshingDrive}
         isMockMode={isMockMode}
+        onBackup={isMockMode ? undefined : handleBackupVault}
+        backupProgress={backupProgress}
       />
 
       {/* Floating Notification Toast */}

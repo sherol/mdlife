@@ -4,6 +4,8 @@ import { parseFrontmatter } from './markdownParser';
 import { isDriveSyncDisabled } from './storageKeys';
 
 const ROOT_FOLDER_NAME = 'Markdown Life Vault';
+/** Top-level vault folder holding backup snapshots (never loaded into the vault). */
+export const BACKUP_FOLDER_NAME = 'backup';
 const DRIVE_API = 'https://www.googleapis.com/drive/v3/';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -707,6 +709,8 @@ export async function importVaultFromDrive(options: ImportDriveOptions = {}): Pr
       'id,name'
     );
     for (const subDir of subDirs) {
+      // Backup snapshots are stored in the vault folder but are not part of the vault itself
+      if (!relativePath && subDir.name.trim().toLowerCase() === BACKUP_FOLDER_NAME) continue;
       // Normalize standard folder names if at top-level
       const childRelative = relativePath
         ? `${relativePath}/${subDir.name}`
@@ -943,4 +947,91 @@ export async function getFilePermissions(fileId: string): Promise<DrivePermissio
   );
   const data = await res.json();
   return Array.isArray(data.permissions) ? data.permissions : [];
+}
+
+// ---------------------------------------------------------------------------
+// Backups
+// ---------------------------------------------------------------------------
+
+/** Snapshot folder name for a date, e.g. "2026-10-20 14-32-05" (local time, sorts chronologically). */
+export function backupSnapshotName(date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ` +
+    `${p(date.getHours())}-${p(date.getMinutes())}-${p(date.getSeconds())}`
+  );
+}
+
+/** Always creates a new folder (unlike getOrCreateFolder, which reuses a match). */
+async function createFolder(name: string, parentId: string): Promise<string> {
+  const res = await driveFetch('files?fields=id', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
+  });
+  return (await res.json()).id as string;
+}
+
+export interface BackupResult {
+  snapshotName: string;
+  snapshotFolderId: string;
+  /** Path shown to the user, e.g. "backup/2026-10-20 14-32-05". */
+  path: string;
+  saved: number;
+  failed: string[];
+}
+
+/**
+ * Copies every file into a new snapshot folder: Markdown Life Vault/backup/<date time>/,
+ * keeping the vault's folder structure. Uses the given (local, newest) content, so unsaved
+ * edits are included. Existing files and earlier snapshots are never touched.
+ */
+export async function backupVaultToDrive(
+  files: VaultFile[],
+  onProgress?: (done: number, total: number) => void
+): Promise<BackupResult> {
+  const rootId = await getVaultRootId();
+  const backupRootId = await getOrCreateFolder(BACKUP_FOLDER_NAME, rootId);
+  const snapshotName = backupSnapshotName();
+  const snapshotFolderId = await createFolder(snapshotName, backupRootId);
+
+  // Create each sub-folder once (sequentially, so parents exist before children).
+  const folderIds = new Map<string, string>([['', snapshotFolderId]]);
+  const folderIdFor = async (folderPath: string): Promise<string> => {
+    let current = '';
+    let parentId = snapshotFolderId;
+    for (const segment of folderPath.split('/').filter(Boolean)) {
+      current = current ? `${current}/${segment}` : segment;
+      let id = folderIds.get(current);
+      if (!id) {
+        id = await createFolder(segment, parentId);
+        folderIds.set(current, id);
+      }
+      parentId = id;
+    }
+    return parentId;
+  };
+  for (const file of files) await folderIdFor(file.folder);
+
+  let done = 0;
+  const failed: string[] = [];
+  await mapConcurrent(files, 5, async (file) => {
+    try {
+      await createFileWithContent(file.name, await folderIdFor(file.folder), file.content);
+    } catch (err) {
+      if (err instanceof DriveAuthError) throw err;
+      console.error(`Backup of ${file.path} failed:`, err);
+      failed.push(file.path);
+    }
+    onProgress?.(++done, files.length);
+    return null;
+  });
+
+  return {
+    snapshotName,
+    snapshotFolderId,
+    path: `${BACKUP_FOLDER_NAME}/${snapshotName}`,
+    saved: files.length - failed.length,
+    failed,
+  };
 }

@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import {
   FolderArchive,
+  DatabaseBackup,
   Plus,
   Upload,
   RefreshCw,
@@ -42,6 +43,10 @@ interface VaultHeaderProps {
   onSyncAllUnsaved?: () => void;
   isRefreshingDrive?: boolean;
   isMockMode?: boolean;
+  /** Saves a snapshot of every file to backup/<date time>/ in Google Drive. */
+  onBackup?: () => void;
+  /** e.g. "12/40" while a backup runs; null when idle. */
+  backupProgress?: string | null;
 }
 
 export const VaultHeader: React.FC<VaultHeaderProps> = ({
@@ -62,6 +67,8 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
   onSyncAllUnsaved,
   isRefreshingDrive = false,
   isMockMode = false,
+  onBackup,
+  backupProgress = null,
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -209,8 +216,8 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
           </button>
         </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-2">
+        {/* Action Controls (wrap instead of running off-screen when space is tight) */}
+        <div className="flex flex-wrap items-center justify-end gap-2 min-w-0">
           {/* Google Drive Status & Modal Trigger */}
           {!isMockMode && (
             <div className="flex items-center gap-1.5">
@@ -351,6 +358,21 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
             <FolderArchive className="w-3.5 h-3.5 text-stone-500" />
             {isExportingZip ? 'Packing ZIP...' : 'Export .ZIP'}
           </button>
+
+          {onBackup && (
+            <button
+              type="button"
+              id="btn-backup-vault"
+              disabled={backupProgress !== null}
+              onClick={onBackup}
+              title="Backup: save a snapshot of all files to backup/ in your Google Drive vault"
+              aria-label={backupProgress !== null ? `Backing up ${backupProgress}` : 'Backup all files to Google Drive'}
+              className="inline-flex items-center gap-1 p-2 text-xs font-medium text-stone-600 bg-white hover:bg-stone-100 hover:text-stone-900 border border-stone-200 rounded-lg transition-colors disabled:opacity-60 cursor-pointer"
+            >
+              <DatabaseBackup className={`w-4 h-4 ${backupProgress !== null ? 'animate-pulse' : ''}`} />
+              {backupProgress !== null && <span className="font-mono text-[10px]">{backupProgress}</span>}
+            </button>
+          )}
 
           <button
             type="button"
