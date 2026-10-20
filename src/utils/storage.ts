@@ -1,5 +1,5 @@
 import { docSyncStore } from './sharedDocs';
-import { ensureTrailhead } from './trailhead';
+import { ensureTrailhead, TRAILHEAD_ID } from './trailhead';
 import JSZip from 'jszip';
 import { VaultFile, FileCategory, PendingDriveDeletion } from '../types';
 import { getInitialVaultFiles } from '../data/initialVault';
@@ -87,8 +87,17 @@ export function loadVaultFiles(): VaultFile[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Vaults cached before the Trailhead existed get it added (local only; Drive sync adds it there)
-        return ensureTrailhead(parsed).files;
+        // Vaults cached before the Trailhead existed get it (local only; Drive reloads add it there).
+        // A first-version trailhead/README.md moves to start.md, keeping any unsaved-edit flag.
+        const result = ensureTrailhead(parsed);
+        if (result.removedLegacy) {
+          const unsaved = loadUnsavedFileIds();
+          if (unsaved.delete(result.removedLegacy.id)) {
+            unsaved.add(TRAILHEAD_ID);
+            saveUnsavedFileIds(unsaved);
+          }
+        }
+        return result.files;
       }
     }
   } catch (err) {

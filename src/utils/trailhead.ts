@@ -2,31 +2,35 @@ import { VaultFile } from '../types';
 import { parseFrontmatter } from './markdownParser';
 
 /**
- * The Trailhead: the vault's single home-page note ("0. Trailhead" in the sidebar).
- * It is always present, opens when the app loads, and can't be deleted or renamed.
+ * The Trailhead: the vault's first folder ("0. Trailhead" in the sidebar). Its start.md is the
+ * vault's home page: always present, opened when the app loads, can't be deleted or renamed.
+ * Other notes can live in the folder too.
  */
 export const TRAILHEAD_FOLDER = 'trailhead';
-export const TRAILHEAD_NAME = 'README.md';
+export const TRAILHEAD_NAME = 'start.md';
 export const TRAILHEAD_ID = `${TRAILHEAD_FOLDER}/${TRAILHEAD_NAME}`;
 export const TRAILHEAD_LABEL = '0. Trailhead';
+/** Where the home page lived in the first version; moved to start.md on load. */
+export const LEGACY_TRAILHEAD_ID = `${TRAILHEAD_FOLDER}/README.md`;
 
 export const isTrailheadFile = (file: Pick<VaultFile, 'id'> | null | undefined): boolean =>
   !!file && file.id === TRAILHEAD_ID;
 
 export const TRAILHEAD_TEMPLATE = `---
-title: Trailhead
+title: Start
 category: trailhead
 ---
 
 # 🥾 Trailhead
 
-Welcome to your vault. This page is the starting point: it opens every time the app loads.
+Welcome to your vault. This page (\`0. Trailhead/start.md\`) is the starting point: it opens every time the app loads.
 Make it yours — edit it like any other note (switch to **Edit** or **Split** above).
 
 ## Where things live
 
 | Folder | What goes there |
 | --- | --- |
+| **0. Trailhead** | This start page, plus anything else you want close at hand |
 | **1. Goals** | The outcomes you're working toward, with target dates and status |
 | **2. Projects** | One sub-folder per project; each project serves a goal |
 | **3. Agent Skills** | Reusable prompt templates for AI assistants |
@@ -65,8 +69,44 @@ export function createTrailheadFile(now = Date.now()): VaultFile {
   };
 }
 
-/** Returns the files with the Trailhead added at the front when it is missing. */
-export function ensureTrailhead(files: VaultFile[]): { files: VaultFile[]; added: boolean } {
-  if (files.some(isTrailheadFile)) return { files, added: false };
-  return { files: [createTrailheadFile(), ...files], added: true };
+const isLegacyTrailhead = (file: VaultFile) =>
+  file.id === LEGACY_TRAILHEAD_ID && file.frontmatter?.category === 'trailhead';
+
+export interface TrailheadResult {
+  files: VaultFile[];
+  /** start.md was created or moved and still needs saving to Drive. */
+  startChanged: boolean;
+  /** The old trailhead/README.md, removed locally (delete it from Drive too). */
+  removedLegacy?: VaultFile;
+}
+
+/**
+ * Makes sure the vault has trailhead/start.md:
+ * - keeps an existing one untouched;
+ * - moves the first version's trailhead/README.md to start.md (content kept);
+ * - otherwise adds the starter page at the front.
+ */
+export function ensureTrailhead(files: VaultFile[]): TrailheadResult {
+  const start = files.find(isTrailheadFile);
+  const legacy = files.find(isLegacyTrailhead);
+
+  if (start) {
+    return legacy
+      ? { files: files.filter((f) => f !== legacy), startChanged: false, removedLegacy: legacy }
+      : { files, startChanged: false };
+  }
+  if (legacy) {
+    const moved: VaultFile = {
+      ...legacy,
+      id: TRAILHEAD_ID,
+      name: TRAILHEAD_NAME,
+      path: TRAILHEAD_ID,
+      folder: TRAILHEAD_FOLDER,
+      driveFileId: undefined,
+      driveModifiedTime: undefined,
+      updatedAt: Date.now(),
+    };
+    return { files: files.map((f) => (f === legacy ? moved : f)), startChanged: true, removedLegacy: legacy };
+  }
+  return { files: [createTrailheadFile(), ...files], startChanged: true };
 }

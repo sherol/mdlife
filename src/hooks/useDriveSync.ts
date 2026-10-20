@@ -545,10 +545,20 @@ export function useDriveSync({
         unsavedRef.current,
         { pruneMissing: true, failedPaths: snapshot.failedPaths }
       );
-      // Every vault has a Trailhead: create it (and upload it) when Drive doesn't have one yet.
+      // Every vault has trailhead/start.md: create (or move from the old README.md) and upload it.
       const withTrailhead = ensureTrailhead(merged);
       updateFiles(() => withTrailhead.files);
-      if (withTrailhead.added) markUnsaved([TRAILHEAD_ID]);
+      if (withTrailhead.startChanged) markUnsaved([TRAILHEAD_ID]);
+      if (withTrailhead.removedLegacy) {
+        const legacy = withTrailhead.removedLegacy;
+        updateUnsaved((prev) => {
+          if (!prev.has(legacy.id)) return prev;
+          const next = new Set(prev);
+          next.delete(legacy.id);
+          return next;
+        });
+        if (legacy.driveFileId) void deleteFromDrive(legacy);
+      }
       merged.filter((f) => getLinkedDocId(f)).forEach((f) => queueDocSync(f.id));
 
       const allFiles = withTrailhead.files;

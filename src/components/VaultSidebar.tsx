@@ -26,7 +26,7 @@ import { VaultFile, FileCategory, TaskProgress } from '../types';
 import { getTaskProgress } from '../utils/markdownParser';
 import { exportSingleFile } from '../utils/storage';
 import { STANDARD_FOLDERS, getTopLevelFolder } from '../utils/fileKinds';
-import { TRAILHEAD_FOLDER, TRAILHEAD_ID, TRAILHEAD_LABEL } from '../utils/trailhead';
+import { TRAILHEAD_FOLDER, TRAILHEAD_LABEL, isTrailheadFile } from '../utils/trailhead';
 import { SubdirectoryTree, SubfolderVariant } from './SubdirectoryTree';
 import { QuickSwitcher } from './QuickSwitcher';
 
@@ -43,12 +43,14 @@ interface VaultSidebarProps {
 }
 
 // Top-level categories ordered strictly:
+// 0. Trailhead (start page)
 // 1. Goals & OKRs
 // 2. Projects & Initiatives
 // 3. Agent Skills
 // 4. Notes & Rituals
 // 5. Archive
 const folderOrder: Record<string, number> = {
+  [TRAILHEAD_FOLDER]: 0,
   goals: 1,
   projects: 2,
   skills: 3,
@@ -64,6 +66,8 @@ const formatSlugLabel = (slug: string) =>
 
 const getCategoryIcon = (topFolder: string) => {
   switch (topFolder) {
+    case TRAILHEAD_FOLDER:
+      return <Footprints className="w-3.5 h-3.5 text-orange-600 shrink-0" />;
     case 'goals':
       return <Target className="w-3.5 h-3.5 text-amber-600 shrink-0" />;
     case 'projects':
@@ -80,6 +84,8 @@ const getCategoryIcon = (topFolder: string) => {
 
 const getFolderLabel = (folder: string) => {
   switch (folder) {
+    case TRAILHEAD_FOLDER:
+      return TRAILHEAD_LABEL;
     case 'goals':
       return '1. Goals';
     case 'projects':
@@ -184,7 +190,6 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
   const folders = useMemo(
     () =>
       Array.from(new Set<string>([...STANDARD_FOLDERS, ...topFolderById.values()]))
-        .filter((folder) => folder !== TRAILHEAD_FOLDER) // rendered separately, as "0. Trailhead"
         .sort((a, b) => {
         const orderA = folderOrder[a] ?? 50;
         const orderB = folderOrder[b] ?? 50;
@@ -251,9 +256,6 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
     });
   }, [files, topFolderById, activeCategoryFilter, searchQuery]);
 
-  // Shown at the top when it matches the current filter/search
-  const trailheadFile = filteredFiles.find((f) => f.id === TRAILHEAD_ID);
-
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(true);
@@ -293,6 +295,8 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
   // Helper to render a file item with consistent alignment
   const renderFileItem = (file: VaultFile) => {
     const isSelected = file.id === selectedFileId;
+    // The Trailhead's start.md (vault home page) can't be renamed or deleted
+    const isProtected = isTrailheadFile(file);
     const progress = progressById.get(file.id) ?? getTaskProgress(file.content);
     let title = file.frontmatter.title || file.name.replace(/\.md$/, '');
     if ((title.toUpperCase() === 'SKILL' || title.toLowerCase() === 'untitled') && file.folder.includes('/')) {
@@ -414,18 +418,20 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
               isSelected ? 'flex' : 'hidden group-hover/item:flex group-focus-within/item:flex'
             } items-center gap-0.5`}
           >
-            <button
-              type="button"
-              title="Rename file"
-              aria-label={`Rename ${file.name}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                startRenaming(file);
-              }}
-              className={actionButtonClass}
-            >
-              <Pencil className="w-3 h-3" />
-            </button>
+            {!isProtected && (
+              <button
+                type="button"
+                title="Rename file"
+                aria-label={`Rename ${file.name}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  startRenaming(file);
+                }}
+                className={actionButtonClass}
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+            )}
             {onCopyDrivePath && (
               <button
                 type="button"
@@ -453,21 +459,23 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
             >
               <Download className="w-3 h-3" />
             </button>
-            <button
-              type="button"
-              id={`btn-delete-file-${file.id}`}
-              title="Delete file permanently"
-              aria-label={`Delete ${file.name}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteFile(file.id);
-              }}
-              className={`p-1 rounded cursor-pointer ${
-                isSelected ? 'hover:bg-red-900 text-red-200' : 'hover:bg-red-100 text-red-600'
-              }`}
-            >
-              <Trash2 className="w-3 h-3" />
-            </button>
+            {!isProtected && (
+              <button
+                type="button"
+                id={`btn-delete-file-${file.id}`}
+                title="Delete file permanently"
+                aria-label={`Delete ${file.name}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteFile(file.id);
+                }}
+                className={`p-1 rounded cursor-pointer ${
+                  isSelected ? 'hover:bg-red-900 text-red-200' : 'hover:bg-red-100 text-red-600'
+                }`}
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -824,7 +832,13 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
 
     // Standard / Goals / Notes / Custom folders (flat list, nested paths included)
     const folderIconColor =
-      folder === 'goals' ? 'text-amber-500' : folder === 'notes' ? 'text-stone-500' : 'text-stone-400';
+      folder === TRAILHEAD_FOLDER
+        ? 'text-orange-500'
+        : folder === 'goals'
+          ? 'text-amber-500'
+          : folder === 'notes'
+            ? 'text-stone-500'
+            : 'text-stone-400';
     return (
       <SubdirectoryTree
         key={folder}
@@ -888,6 +902,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
           {(
             [
               { id: 'all', label: 'All' },
+              { id: TRAILHEAD_FOLDER, label: TRAILHEAD_LABEL },
               { id: 'goals', label: '1. Goals' },
               { id: 'projects', label: '2. Projects' },
               { id: 'skills', label: '3. Agent Skills' },
@@ -923,27 +938,6 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
           <div className="p-4 border-2 border-dashed border-stone-400 rounded-lg text-center text-xs text-stone-600 bg-white font-medium">
             Drop markdown files here to import into vault
           </div>
-        )}
-
-        {/* 0. Trailhead: the vault's home page (a single note, always first) */}
-        {trailheadFile && (
-          <button
-            type="button"
-            id="sidebar-trailhead"
-            onClick={() => onSelectFile(TRAILHEAD_ID)}
-            aria-current={selectedFileId === TRAILHEAD_ID ? 'page' : undefined}
-            title="Open the Trailhead (vault home page)"
-            className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md font-semibold text-xs tracking-wider uppercase cursor-pointer transition-colors ${
-              selectedFileId === TRAILHEAD_ID
-                ? 'bg-stone-900 text-white'
-                : 'text-stone-500 hover:text-stone-800 hover:bg-stone-100'
-            }`}
-          >
-            <Footprints
-              className={`w-3.5 h-3.5 shrink-0 ${selectedFileId === TRAILHEAD_ID ? 'text-white' : 'text-orange-600'}`}
-            />
-            <span>{TRAILHEAD_LABEL}</span>
-          </button>
         )}
 
         {folders.map((folder) => renderFolder(folder))}
