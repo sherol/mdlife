@@ -24,7 +24,7 @@ category: trailhead
 # 🥾 Trailhead
 
 Welcome to your vault. This page (\`0. Trailhead/start.md\`) is the starting point: it opens every time the app loads.
-Make it yours — edit it like any other note (switch to **Edit** or **Split** above).
+Make it yours — edit it like any other note.
 
 ## Where things live
 

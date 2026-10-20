@@ -34,7 +34,6 @@ import { MarkdownPreview } from './MarkdownPreview';
 import { parseFrontmatter, stringifyWithFrontmatter } from '../utils/markdownParser';
 import { getTodayYYMMDD } from '../utils/date';
 import { expandTodayTokens } from '../utils/expandToday';
-import { isTrailheadFile } from '../utils/trailhead';
 import { isProjectFile } from '../utils/fileKinds';
 
 const parseTags = (raw: string): string[] =>
@@ -93,10 +92,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   onOpenSharedDoc,
   onResolveDocConflict,
 }) => {
-  // The Trailhead reads like a home page, so it opens rendered; other notes open split.
-  const [viewMode, setViewMode] = useState<'split' | 'edit' | 'preview'>(() =>
-    isTrailheadFile(file) ? 'preview' : 'split'
-  );
+  const [viewMode, setViewMode] = useState<'split' | 'edit' | 'preview'>('split');
   const [showMetadataDrawer, setShowMetadataDrawer] = useState(false);
   const [showWikiDropdown, setShowWikiDropdown] = useState(false);
   const [wikiFilter, setWikiFilter] = useState('');

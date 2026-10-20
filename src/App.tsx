@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User } from 'firebase/auth';
 import { HardDrive, Plus, Sparkles, RefreshCw, Loader2 } from 'lucide-react';
 import { VaultFile, ActiveTab, FileCategory, DriveConnectionStatus } from './types';
@@ -140,6 +140,13 @@ export default function App({ forceOffline = false }: AppProps) {
     return () => unsubscribe();
   }, []);
 
+  // Every login (sign-in, or a restored session when the app opens) starts at the Trailhead.
+  const hasOpenedTrailheadForLoginRef = useRef(false);
+  const openTrailhead = useCallback(() => {
+    setSelectedFileId(TRAILHEAD_ID);
+    setActiveTab('editor');
+  }, []);
+
   // Initialize Firebase Auth listener
   useEffect(() => {
     if (isMockMode) {
@@ -150,6 +157,10 @@ export default function App({ forceOffline = false }: AppProps) {
       (user, token) => {
         setGoogleUser(user);
         setHasBypassedAuth(false);
+        if (!hasOpenedTrailheadForLoginRef.current) {
+          hasOpenedTrailheadForLoginRef.current = true;
+          openTrailhead();
+        }
         if (token) {
           setDriveStatus('connected');
           // Automatically load files from Google Drive (merged with any unsaved local edits)
@@ -166,7 +177,7 @@ export default function App({ forceOffline = false }: AppProps) {
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe();
     };
-  }, [fetchFilesFromDrive, isMockMode]);
+  }, [fetchFilesFromDrive, isMockMode, openTrailhead]);
 
   // Periodic and on-focus proactive Google Drive connection health check
   useEffect(() => {
@@ -665,6 +676,8 @@ export default function App({ forceOffline = false }: AppProps) {
         setGoogleUser(result.user);
         setHasBypassedAuth(false);
         saveBypassedAuth(false);
+        hasOpenedTrailheadForLoginRef.current = true;
+        openTrailhead();
         // Unblock start screen immediately so workspace opens in ~1 second
         setIsStartingSignIn(false);
         fetchFilesFromDrive(false);
@@ -689,7 +702,8 @@ export default function App({ forceOffline = false }: AppProps) {
     setHasBypassedAuth(false);
     updateFiles(() => []);
     updateUnsaved(() => new Set());
-    setSelectedFileId(null);
+    setSelectedFileId(TRAILHEAD_ID);
+    hasOpenedTrailheadForLoginRef.current = false; // the next login starts at the Trailhead again
     setToastNotification({
       type: 'info',
       text: 'Disconnected from Google account.',
