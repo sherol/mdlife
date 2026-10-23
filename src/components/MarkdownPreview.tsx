@@ -105,7 +105,10 @@ const TaskCheckbox: React.FC<{ checked?: boolean }> = ({ checked }) => {
   );
 };
 
-const PreviewLink: React.FC<{ href?: string; children?: React.ReactNode }> = ({ href, children }) => {
+const PreviewLink: React.FC<{ href?: string; children?: React.ReactNode }> = ({
+  href,
+  children,
+}) => {
   const { allFiles, onNavigateToFile } = usePreviewContext();
   if (!href) return <span>{children}</span>;
 
@@ -133,13 +136,19 @@ const PreviewLink: React.FC<{ href?: string; children?: React.ReactNode }> = ({ 
             : 'bg-stone-100 hover:bg-stone-200 text-stone-600 border border-dashed border-stone-300'
         }`}
       >
-        <span aria-hidden="true" className="text-amber-600 font-bold select-none text-[11px] group-hover:text-amber-700">
+        <span
+          aria-hidden="true"
+          className="text-amber-600 font-bold select-none text-[11px] group-hover:text-amber-700"
+        >
           [[
         </span>
         <span className="font-sans font-medium text-stone-900 group-hover:underline underline-offset-2">
           {children}
         </span>
-        <span aria-hidden="true" className="text-amber-600 font-bold select-none text-[11px] group-hover:text-amber-700">
+        <span
+          aria-hidden="true"
+          className="text-amber-600 font-bold select-none text-[11px] group-hover:text-amber-700"
+        >
           ]]
         </span>
         <ArrowUpRight className="w-3 h-3 text-amber-700 opacity-60 group-hover:opacity-100 shrink-0" />
@@ -207,12 +216,17 @@ const PreviewLink: React.FC<{ href?: string; children?: React.ReactNode }> = ({ 
   );
 };
 
-const TaskListItem: React.FC<{ line?: number; children?: React.ReactNode }> = ({ line, children }) => {
+const TaskListItem: React.FC<{ line?: number; children?: React.ReactNode }> = ({
+  line,
+  children,
+}) => {
   const { taskLineMap } = usePreviewContext();
   const taskIndex = line !== undefined ? taskLineMap.get(line) : undefined;
   return (
     <TaskIndexContext.Provider value={taskIndex}>
-      <li className="list-none -ml-4 flex items-start gap-2 py-0.5 text-sm text-stone-800">{children}</li>
+      <li className="list-none -ml-4 flex items-start gap-2 py-0.5 text-sm text-stone-800">
+        {children}
+      </li>
     </TaskIndexContext.Provider>
   );
 };
@@ -298,11 +312,15 @@ const markdownComponents: Components = {
   },
   table: ({ children }) => (
     <div className="overflow-x-auto my-5 rounded-xl border border-stone-200/90 shadow-2xs bg-white">
-      <table className="w-full min-w-full text-left border-collapse text-xs md:text-sm">{children}</table>
+      <table className="w-full min-w-full text-left border-collapse text-xs md:text-sm">
+        {children}
+      </table>
     </div>
   ),
   thead: ({ children }) => (
-    <thead className="bg-stone-100/90 text-stone-900 border-b border-stone-200 font-semibold">{children}</thead>
+    <thead className="bg-stone-100/90 text-stone-900 border-b border-stone-200 font-semibold">
+      {children}
+    </thead>
   ),
   tbody: ({ children }) => <tbody className="divide-y divide-stone-100 bg-white">{children}</tbody>,
   tr: ({ children, className }) => (
@@ -370,7 +388,7 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
       onNavigateToFile: stableNavigate,
       onToggleCheckbox: stableToggle,
     }),
-    [deferredAllFiles, taskLineMap, stableNavigate, stableToggle]
+    [deferredAllFiles, taskLineMap, stableNavigate, stableToggle],
   );
 
   const copyContent = async () => {
@@ -422,7 +440,7 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
         {processedContent}
       </ReactMarkdown>
     ),
-    [processedContent]
+    [processedContent],
   );
 
   // Files whose [[WikiLinks]] point at this file
@@ -431,7 +449,9 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
     const target = { name: file.name, path: file.path, frontmatter: { title: fileTitle } };
     return deferredAllFiles
       .filter(
-        (f) => f.id !== file.id && extractWikiLinks(f.content).some((link) => wikiTargetMatchesFile(link, target))
+        (f) =>
+          f.id !== file.id &&
+          extractWikiLinks(f.content).some((link) => wikiTargetMatchesFile(link, target)),
       )
       .sort((a, b) => (a.frontmatter.title || a.name).localeCompare(b.frontmatter.title || b.name));
   }, [deferredAllFiles, file.id, file.name, file.path, fileTitle]);
@@ -457,8 +477,8 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
                   frontmatter.status === 'completed'
                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                     : frontmatter.status === 'active' || frontmatter.status === 'in-progress'
-                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                    : 'bg-stone-100 text-stone-700 border border-stone-200'
+                      ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                      : 'bg-stone-100 text-stone-700 border border-stone-200'
                 }`}
               >
                 {frontmatter.status}
@@ -468,7 +488,8 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
             {/* Priority */}
             {frontmatter.priority && (
               <span className="px-2 py-0.5 rounded-md text-[11px] font-medium text-stone-600 bg-white border border-stone-200">
-                Priority: <strong className="capitalize text-stone-900">{frontmatter.priority}</strong>
+                Priority:{' '}
+                <strong className="capitalize text-stone-900">{frontmatter.priority}</strong>
               </span>
             )}
 
@@ -605,7 +626,10 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
       </div>
 
       {/* Backlinks: files that [[link]] to this one */}
-      <section aria-labelledby="preview-backlinks-heading" className="mt-10 pt-4 border-t border-stone-200 text-xs">
+      <section
+        aria-labelledby="preview-backlinks-heading"
+        className="mt-10 pt-4 border-t border-stone-200 text-xs"
+      >
         <h2
           id="preview-backlinks-heading"
           className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-stone-500 mb-2"
@@ -615,7 +639,8 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
         </h2>
         {backlinks.length === 0 ? (
           <p className="text-[11px] text-stone-400 italic">
-            No other files link here yet. Reference this file with [[{file.name.replace(/\.md$/, '')}]].
+            No other files link here yet. Reference this file with [[
+            {file.name.replace(/\.md$/, '')}]].
           </p>
         ) : (
           <ul className="flex flex-wrap gap-1.5">
@@ -627,7 +652,9 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
                   title={`Open ${source.path}`}
                   className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-stone-50 hover:bg-amber-50 border border-stone-200 hover:border-amber-300 text-stone-700 transition-colors cursor-pointer"
                 >
-                  <span className="font-medium truncate max-w-[220px]">{source.frontmatter.title || source.name}</span>
+                  <span className="font-medium truncate max-w-[220px]">
+                    {source.frontmatter.title || source.name}
+                  </span>
                   <span className="text-[10px] font-mono text-stone-400">/{source.folder}</span>
                   <ArrowUpRight className="w-3 h-3 text-stone-400 shrink-0" />
                 </button>

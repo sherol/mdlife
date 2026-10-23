@@ -190,19 +190,22 @@ describe('quoted frontmatter titles', () => {
     "It's fine",
   ];
 
-  it.each(titles)('round-trips %s through quoteYamlString (as Google Doc import writes it)', (title) => {
-    const md = [
-      '---',
-      `title: ${quoteYamlString(title)}`,
-      'category: notes',
-      'tags:',
-      '  - gdocs-import',
-      '---',
-      '',
-      'Body',
-    ].join('\n');
-    expect(parseFrontmatter(md).frontmatter.title).toBe(title);
-  });
+  it.each(titles)(
+    'round-trips %s through quoteYamlString (as Google Doc import writes it)',
+    (title) => {
+      const md = [
+        '---',
+        `title: ${quoteYamlString(title)}`,
+        'category: notes',
+        'tags:',
+        '  - gdocs-import',
+        '---',
+        '',
+        'Body',
+      ].join('\n');
+      expect(parseFrontmatter(md).frontmatter.title).toBe(title);
+    },
+  );
 
   it.each(titles)('round-trips %s through stringifyWithFrontmatter', (title) => {
     const out = stringifyWithFrontmatter({ title, tags: [title] }, 'Body');

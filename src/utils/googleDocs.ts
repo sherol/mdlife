@@ -214,7 +214,7 @@ export function openGoogleDocsPicker({
  */
 export async function fetchGoogleDocData(
   documentId: string,
-  accessToken: string
+  accessToken: string,
 ): Promise<{ title: string; markdown: string }> {
   // 1. Try Google Docs API v1
   try {
@@ -241,7 +241,7 @@ export async function fetchGoogleDocData(
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
-    }
+    },
   );
 
   if (!exportRes.ok) {
@@ -266,7 +266,7 @@ export async function fetchGoogleDocData(
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
-      }
+      },
     );
     if (metaRes.ok) {
       const meta = await metaRes.json();
@@ -411,5 +411,8 @@ export function convertGoogleDocToMarkdown(doc: any): string {
     }
   }
 
-  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return lines
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }

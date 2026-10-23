@@ -9,7 +9,7 @@
 export function expandTodayTokens(
   text: string,
   cursor: number,
-  todayStr: string
+  todayStr: string,
 ): { text: string; cursor: number } {
   const re = /@today/gi;
   let out = '';

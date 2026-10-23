@@ -106,7 +106,11 @@ export function ensureTrailhead(files: VaultFile[]): TrailheadResult {
       driveModifiedTime: undefined,
       updatedAt: Date.now(),
     };
-    return { files: files.map((f) => (f === legacy ? moved : f)), startChanged: true, removedLegacy: legacy };
+    return {
+      files: files.map((f) => (f === legacy ? moved : f)),
+      startChanged: true,
+      removedLegacy: legacy,
+    };
   }
   return { files: [createTrailheadFile(), ...files], startChanged: true };
 }

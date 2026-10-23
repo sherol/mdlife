@@ -8,14 +8,13 @@ type Updater<T> = T | ((prev: T) => T);
  * even before React re-renders. Updates must go through the returned `update` function.
  */
 export function useRefState<T>(
-  init: () => T
+  init: () => T,
 ): [T, (next: Updater<T>) => void, MutableRefObject<T>] {
   const [state, setState] = useState<T>(init);
   const ref = useRef<T>(state);
 
   const update = useCallback((next: Updater<T>) => {
-    const value =
-      typeof next === 'function' ? (next as (prev: T) => T)(ref.current) : next;
+    const value = typeof next === 'function' ? (next as (prev: T) => T)(ref.current) : next;
     ref.current = value;
     setState(value);
   }, []);

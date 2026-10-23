@@ -42,8 +42,8 @@ const parseTags = (raw: string): string[] =>
       raw
         .split(',')
         .map((t) => t.trim())
-        .filter(Boolean)
-    )
+        .filter(Boolean),
+    ),
   );
 
 interface MarkdownEditorProps {
@@ -137,7 +137,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           !q ||
           f.name.toLowerCase().includes(q) ||
           f.path.toLowerCase().includes(q) ||
-          (f.frontmatter.title || '').toLowerCase().includes(q)
+          (f.frontmatter.title || '').toLowerCase().includes(q),
       );
   }, [allFiles, file.id, wikiFilter]);
 
@@ -187,7 +187,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const rememberSelection = () => {
     const t = textareaRef.current;
     if (t && document.activeElement === t) {
-      lastSelectionRef.current = { start: t.selectionStart, end: t.selectionEnd, scrollTop: t.scrollTop };
+      lastSelectionRef.current = {
+        start: t.selectionStart,
+        end: t.selectionEnd,
+        scrollTop: t.scrollTop,
+      };
     }
   };
 
@@ -261,7 +265,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     let inserted: boolean;
     try {
       inserted =
-        typeof document.execCommand === 'function' && document.execCommand('insertText', false, replacement);
+        typeof document.execCommand === 'function' &&
+        document.execCommand('insertText', false, replacement);
     } catch {
       inserted = false;
     }
@@ -277,7 +282,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
     // Fallback: replace the content directly (no native undo); caret restored in the layout effect.
     pendingCaretRef.current = { start: selStart, end: selEnd, scrollTop };
-    onChangeContent(textarea.value.substring(0, start) + replacement + textarea.value.substring(end));
+    onChangeContent(
+      textarea.value.substring(0, start) + replacement + textarea.value.substring(end),
+    );
   };
 
   // Handles textarea content changes and expands @today to YY-MM-DD string.
@@ -292,7 +299,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     const textarea = textareaRef.current;
     const caret = typeof cursor === 'number' ? cursor : (textarea?.selectionStart ?? val.length);
     const { text, cursor: newCursor } = expandTodayTokens(val, caret, getTodayYYMMDD());
-    pendingCaretRef.current = { start: newCursor, end: newCursor, scrollTop: textarea?.scrollTop ?? 0 };
+    pendingCaretRef.current = {
+      start: newCursor,
+      end: newCursor,
+      scrollTop: textarea?.scrollTop ?? 0,
+    };
     lastLocalContentRef.current = text;
     onChangeContent(text);
   };
@@ -494,7 +505,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 insertText(
                   '\n| Column 1 | Column 2 | Column 3 |\n| :--- | :--- | :--- |\n| Item 1 | Details | Active |\n| Item 2 | Details | Pending |\n\n',
                   '',
-                  ''
+                  '',
                 )
               }
               className="p-1.5 hover:bg-stone-100 rounded text-stone-700"
@@ -532,81 +543,94 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 <span>[[...]]</span>
               </button>
 
-            {showWikiDropdown && (
-              <div
-                className="absolute top-full left-0 mt-1 w-64 bg-white border border-stone-200 rounded-lg shadow-lg z-30 p-1"
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    e.preventDefault();
-                    closeWikiPicker(true);
-                  }
-                }}
-              >
-                <div className="relative mb-1">
-                  <Search className="w-3 h-3 absolute left-2 top-2 text-stone-400" />
-                  <input
-                    type="text"
-                    autoFocus
-                    value={wikiFilter}
-                    onChange={(e) => {
-                      setWikiFilter(e.target.value);
-                      setWikiActiveIndex(0);
-                    }}
-                    onKeyDown={handleWikiFilterKeyDown}
-                    placeholder="Filter files to link..."
-                    aria-label="Filter files to link"
-                    aria-controls="wikilink-picker-list"
-                    aria-activedescendant={
-                      wikiCandidates[wikiActiveIndex] ? `wikilink-option-${wikiActiveIndex}` : undefined
+              {showWikiDropdown && (
+                <div
+                  className="absolute top-full left-0 mt-1 w-64 bg-white border border-stone-200 rounded-lg shadow-lg z-30 p-1"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      closeWikiPicker(true);
                     }
-                    className="w-full pl-6 pr-2 py-1 bg-stone-50 border border-stone-200 rounded text-xs text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:border-stone-400"
-                  />
+                  }}
+                >
+                  <div className="relative mb-1">
+                    <Search className="w-3 h-3 absolute left-2 top-2 text-stone-400" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={wikiFilter}
+                      onChange={(e) => {
+                        setWikiFilter(e.target.value);
+                        setWikiActiveIndex(0);
+                      }}
+                      onKeyDown={handleWikiFilterKeyDown}
+                      placeholder="Filter files to link..."
+                      aria-label="Filter files to link"
+                      aria-controls="wikilink-picker-list"
+                      aria-activedescendant={
+                        wikiCandidates[wikiActiveIndex]
+                          ? `wikilink-option-${wikiActiveIndex}`
+                          : undefined
+                      }
+                      className="w-full pl-6 pr-2 py-1 bg-stone-50 border border-stone-200 rounded text-xs text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:border-stone-400"
+                    />
+                  </div>
+                  <div
+                    id="wikilink-picker-list"
+                    role="listbox"
+                    aria-label="Files"
+                    className="max-h-56 overflow-y-auto"
+                  >
+                    {wikiCandidates.length === 0 ? (
+                      <div className="px-2 py-1.5 text-[11px] text-stone-400 italic">
+                        No matching files
+                      </div>
+                    ) : (
+                      wikiCandidates.map((target, idx) => (
+                        <button
+                          key={target.id}
+                          id={`wikilink-option-${idx}`}
+                          type="button"
+                          role="option"
+                          aria-selected={idx === wikiActiveIndex}
+                          tabIndex={-1}
+                          onMouseEnter={() => setWikiActiveIndex(idx)}
+                          onClick={() => handleInsertWikiLink(target)}
+                          className={`w-full text-left px-2 py-1.5 text-xs hover:bg-stone-100 rounded flex items-center justify-between text-stone-800 ${
+                            idx === wikiActiveIndex ? 'bg-stone-100' : ''
+                          }`}
+                        >
+                          <span className="truncate">
+                            {target.frontmatter.title || target.name}
+                          </span>
+                          <span className="text-[10px] font-mono text-stone-400 ml-1">
+                            /{target.folder}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
                 </div>
-                <div id="wikilink-picker-list" role="listbox" aria-label="Files" className="max-h-56 overflow-y-auto">
-                  {wikiCandidates.length === 0 ? (
-                    <div className="px-2 py-1.5 text-[11px] text-stone-400 italic">No matching files</div>
-                  ) : (
-                    wikiCandidates.map((target, idx) => (
-                      <button
-                        key={target.id}
-                        id={`wikilink-option-${idx}`}
-                        type="button"
-                        role="option"
-                        aria-selected={idx === wikiActiveIndex}
-                        tabIndex={-1}
-                        onMouseEnter={() => setWikiActiveIndex(idx)}
-                        onClick={() => handleInsertWikiLink(target)}
-                        className={`w-full text-left px-2 py-1.5 text-xs hover:bg-stone-100 rounded flex items-center justify-between text-stone-800 ${
-                          idx === wikiActiveIndex ? 'bg-stone-100' : ''
-                        }`}
-                      >
-                        <span className="truncate">{target.frontmatter.title || target.name}</span>
-                        <span className="text-[10px] font-mono text-stone-400 ml-1">
-                          /{target.folder}
-                        </span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          {/* Today's Date Button (YY-MM-DD string) */}
-          <div className="flex items-center border border-stone-200 rounded-md bg-white p-0.5 shadow-2xs">
-            <button
-              type="button"
-              id="btn-insert-today"
-              title={`Insert today's date (${getTodayYYMMDD()}) or type @today`}
-              onClick={() => insertText(getTodayYYMMDD())}
-              className="flex items-center gap-1.5 px-2 py-1 hover:bg-stone-100 rounded text-stone-700 text-xs font-mono group"
-            >
-              <Calendar className="w-3.5 h-3.5 text-stone-500 group-hover:text-blue-600 transition-colors" />
-              <span className="font-semibold text-stone-800">{getTodayYYMMDD()}</span>
-              <span className="text-[10px] text-stone-400 group-hover:text-stone-600 font-sans">(@today)</span>
-            </button>
+            {/* Today's Date Button (YY-MM-DD string) */}
+            <div className="flex items-center border border-stone-200 rounded-md bg-white p-0.5 shadow-2xs">
+              <button
+                type="button"
+                id="btn-insert-today"
+                title={`Insert today's date (${getTodayYYMMDD()}) or type @today`}
+                onClick={() => insertText(getTodayYYMMDD())}
+                className="flex items-center gap-1.5 px-2 py-1 hover:bg-stone-100 rounded text-stone-700 text-xs font-mono group"
+              >
+                <Calendar className="w-3.5 h-3.5 text-stone-500 group-hover:text-blue-600 transition-colors" />
+                <span className="font-semibold text-stone-800">{getTodayYYMMDD()}</span>
+                <span className="text-[10px] text-stone-400 group-hover:text-stone-600 font-sans">
+                  (@today)
+                </span>
+              </button>
+            </div>
           </div>
-        </div>
 
           {/* Metadata Quick Edit Drawer Toggle */}
           <button
@@ -640,17 +664,17 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 driveStatus === 'expired'
                   ? 'Drive session expired. Click to reconnect and push local edits to Drive.'
                   : isUnsavedToDrive
-                  ? 'Edits exist locally that need saving to Google Drive'
-                  : googleUser
-                  ? 'Save this file to Google Drive'
-                  : 'Connect Google Drive to save'
+                    ? 'Edits exist locally that need saving to Google Drive'
+                    : googleUser
+                      ? 'Save this file to Google Drive'
+                      : 'Connect Google Drive to save'
               }
               className={`flex items-center gap-1.5 px-2.5 py-1.5 border rounded-md transition-colors shadow-2xs font-medium cursor-pointer disabled:opacity-75 ${
                 driveStatus === 'expired'
                   ? 'border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900'
                   : isUnsavedToDrive
-                  ? 'border-amber-300 bg-amber-50/80 hover:bg-amber-100 text-amber-900'
-                  : 'border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-blue-700'
+                    ? 'border-amber-300 bg-amber-50/80 hover:bg-amber-100 text-amber-900'
+                    : 'border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-blue-700'
               }`}
             >
               {isSavingToDrive || isDriveSyncing ? (
@@ -658,21 +682,26 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               ) : driveStatus === 'expired' ? (
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
               ) : (
-                <CloudUpload className={`w-3.5 h-3.5 ${isUnsavedToDrive ? 'text-amber-600' : 'text-blue-600'}`} />
+                <CloudUpload
+                  className={`w-3.5 h-3.5 ${isUnsavedToDrive ? 'text-amber-600' : 'text-blue-600'}`}
+                />
               )}
               <span>
                 {isSavingToDrive
                   ? 'Saving...'
                   : isDriveSyncing
-                  ? 'Syncing...'
-                  : driveStatus === 'expired'
-                  ? 'Drive Expired – Reconnect'
-                  : isUnsavedToDrive
-                  ? 'Save to Drive (Unsaved)'
-                  : 'Save to Drive'}
+                    ? 'Syncing...'
+                    : driveStatus === 'expired'
+                      ? 'Drive Expired – Reconnect'
+                      : isUnsavedToDrive
+                        ? 'Save to Drive (Unsaved)'
+                        : 'Save to Drive'}
               </span>
               {isUnsavedToDrive && driveStatus !== 'expired' && (
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" title="Unsaved changes pending" />
+                <span
+                  className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"
+                  title="Unsaved changes pending"
+                />
               )}
             </button>
           )}
@@ -783,13 +812,16 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         <div className="bg-stone-50 border-b border-stone-200 px-4 py-3 text-xs grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-in fade-in duration-150">
           {/* Status */}
           <div>
-            <label htmlFor="frontmatter-status-select" className="block text-stone-500 font-medium mb-1">Status</label>
+            <label
+              htmlFor="frontmatter-status-select"
+              className="block text-stone-500 font-medium mb-1"
+            >
+              Status
+            </label>
             <select
               id="frontmatter-status-select"
               value={file.frontmatter.status || 'active'}
-              onChange={(e) =>
-                updateFrontmatterProperty({ status: e.target.value as any })
-              }
+              onChange={(e) => updateFrontmatterProperty({ status: e.target.value as any })}
               className="w-full bg-white border border-stone-200 rounded px-2 py-1 text-stone-800 text-xs"
             >
               <option value="active">Active</option>
@@ -803,13 +835,16 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
           {/* Priority */}
           <div>
-            <label htmlFor="frontmatter-priority-select" className="block text-stone-500 font-medium mb-1">Priority</label>
+            <label
+              htmlFor="frontmatter-priority-select"
+              className="block text-stone-500 font-medium mb-1"
+            >
+              Priority
+            </label>
             <select
               id="frontmatter-priority-select"
               value={file.frontmatter.priority || 'medium'}
-              onChange={(e) =>
-                updateFrontmatterProperty({ priority: e.target.value as any })
-              }
+              onChange={(e) => updateFrontmatterProperty({ priority: e.target.value as any })}
               className="w-full bg-white border border-stone-200 rounded px-2 py-1 text-stone-800 text-xs"
             >
               <option value="high">High</option>
@@ -820,21 +855,27 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
           {/* Target Date */}
           <div>
-            <label htmlFor="frontmatter-target-date" className="block text-stone-500 font-medium mb-1">Target Date</label>
+            <label
+              htmlFor="frontmatter-target-date"
+              className="block text-stone-500 font-medium mb-1"
+            >
+              Target Date
+            </label>
             <input
               id="frontmatter-target-date"
               type="date"
               value={file.frontmatter.target_date || ''}
-              onChange={(e) =>
-                updateFrontmatterProperty({ target_date: e.target.value })
-              }
+              onChange={(e) => updateFrontmatterProperty({ target_date: e.target.value })}
               className="w-full bg-white border border-stone-200 rounded px-2 py-1 text-stone-800 text-xs"
             />
           </div>
 
           {/* Tags */}
           <div>
-            <label htmlFor="frontmatter-tags-input" className="block text-stone-500 font-medium mb-1">
+            <label
+              htmlFor="frontmatter-tags-input"
+              className="block text-stone-500 font-medium mb-1"
+            >
               Tags (comma separated)
             </label>
             <input
@@ -891,7 +932,10 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
             <span>
-              <strong>Google Drive disconnected.</strong> {isUnsavedToDrive ? 'Your latest edits are safe in browser storage. Click to reconnect and sync.' : 'Your files are safe in local storage. Click Reconnect to resume sync.'}
+              <strong>Google Drive disconnected.</strong>{' '}
+              {isUnsavedToDrive
+                ? 'Your latest edits are safe in browser storage. Click to reconnect and sync.'
+                : 'Your files are safe in local storage. Click Reconnect to resume sync.'}
             </span>
           </div>
           {onReconnectDrive && (
@@ -997,7 +1041,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                 <span className="flex-1">
-                  You and the other editor changed the same lines in the shared Google Doc. Syncing is paused for this note.
+                  You and the other editor changed the same lines in the shared Google Doc. Syncing
+                  is paused for this note.
                 </span>
                 {onResolveDocConflict && (
                   <button
@@ -1014,7 +1059,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               ref={textareaRef}
               id="markdown-source-textarea"
               value={file.content}
-              onChange={(e) => handleContentChangeWithToday(e.target.value, e.target.selectionStart)}
+              onChange={(e) =>
+                handleContentChangeWithToday(e.target.value, e.target.selectionStart)
+              }
               onKeyDown={handleKeyDown}
               onSelect={rememberSelection}
               onKeyUp={rememberSelection}
@@ -1034,9 +1081,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           <div className="flex-1 flex flex-col h-full bg-white overflow-hidden">
             <div className="px-4 py-1.5 bg-stone-100/60 border-b border-stone-200 text-[11px] text-stone-500 flex items-center justify-between">
               <span>Rendered Preview</span>
-              <span className="text-[10px] text-stone-400">
-                Click task checkboxes to toggle
-              </span>
+              <span className="text-[10px] text-stone-400">Click task checkboxes to toggle</span>
             </div>
             <MarkdownPreview
               file={file}

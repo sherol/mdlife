@@ -220,10 +220,7 @@ Each file contains structured YAML frontmatter compatible with Obsidian, VS Code
 /**
  * Generates initial markdown template when creating a new file
  */
-export function getTemplateForCategory(
-  category: FileCategory,
-  title: string
-): string {
+export function getTemplateForCategory(category: FileCategory, title: string): string {
   const today = new Date().toISOString().split('T')[0];
 
   switch (category) {
@@ -255,7 +252,7 @@ Describe the enduring impact, measurable outcome, and why this goal matters.
 
 ## Agent Skills To Deploy
 - Note any \`@skill-name\` that can accelerate execution
-`
+`,
       );
 
     case 'projects':
@@ -288,7 +285,7 @@ Clear summary of the project scope, deliverables, and definition of done.
 
 ## Notes & Technical Context
 Add architecture diagrams, links, or scratchpad decisions here.
-`
+`,
       );
 
     case 'skills':
@@ -328,7 +325,7 @@ Task:
 
 Respond strictly in structured markdown format with clear headings and verified steps.
 \`\`\`
-`
+`,
       );
 
     case 'archive':
@@ -349,7 +346,7 @@ Summarize the outcomes, lessons learned, or reason for preservation.
 
 ## Preserved Notes & Historical Deliverables
 - Key accomplishment or retrospective artifact
-`
+`,
       );
 
     case 'notes':
@@ -371,7 +368,7 @@ Capture quick thoughts, meeting notes, reflection loops, and loop closures.
 ## Quick Tasks
 - [ ] Immediate follow-up
 - [ ] Triage open questions
-`
+`,
       );
   }
 }

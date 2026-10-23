@@ -35,8 +35,9 @@ export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
               Agent Skills & Prompt Templates
             </h2>
             <p className="text-sm text-stone-600 mt-1 max-w-3xl">
-              Manage your personal library of autonomous agent skills. Each skill is stored as a portable markdown file
-              with structured YAML frontmatter, input definitions, and operational prompt templates.
+              Manage your personal library of autonomous agent skills. Each skill is stored as a
+              portable markdown file with structured YAML frontmatter, input definitions, and
+              operational prompt templates.
             </p>
           </div>
 
@@ -68,10 +69,13 @@ export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
         {skills.length === 0 ? (
           <div className="bg-white border border-stone-200 rounded-xl p-8 text-center shadow-xs">
             <Bot className="w-8 h-8 text-stone-400 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-stone-800">No agent skill files found in your vault</p>
+            <p className="text-sm font-semibold text-stone-800">
+              No agent skill files found in your vault
+            </p>
             <p className="text-xs text-stone-500 mt-1 mb-5 max-w-md mx-auto">
-              Agent skills are modular prompt templates that can be executed independently or linked to projects.
-              Load 4 battle-tested starter skill templates or author your own from scratch.
+              Agent skills are modular prompt templates that can be executed independently or linked
+              to projects. Load 4 battle-tested starter skill templates or author your own from
+              scratch.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2.5">
               {onLoadStarterSkills && (
@@ -99,124 +103,124 @@ export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {skills.map((skill) => {
-            const { frontmatter } = skill;
-            const role = frontmatter.role || 'Autonomous Assistant';
-            const model = frontmatter.model || 'gemini-2.5-flash';
-            const inputs = frontmatter.inputs || [];
+              const { frontmatter } = skill;
+              const role = frontmatter.role || 'Autonomous Assistant';
+              const model = frontmatter.model || 'gemini-2.5-flash';
+              const inputs = frontmatter.inputs || [];
 
-            // Find projects that reference this skill
-            const consumingProjects = projects.filter((p) => {
+              // Find projects that reference this skill
+              const consumingProjects = projects.filter((p) => {
+                return (
+                  p.frontmatter.assigned_skills?.includes(skill.name) ||
+                  p.content.includes(`@${skill.name.replace(/\.md$/, '')}`) ||
+                  p.content.includes(`[[${skill.name}]]`)
+                );
+              });
+
               return (
-                p.frontmatter.assigned_skills?.includes(skill.name) ||
-                p.content.includes(`@${skill.name.replace(/\.md$/, '')}`) ||
-                p.content.includes(`[[${skill.name}]]`)
-              );
-            });
-
-            return (
-              <div
-                key={skill.id}
-                className="bg-white border border-stone-200 rounded-xl p-5 shadow-xs hover:shadow-md hover:border-stone-300 transition-all flex flex-col justify-between"
-              >
-                <div>
-                  {/* Skill Badge Bar */}
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
-                      <Cpu className="w-2.5 h-2.5" />
-                      {model}
-                    </span>
-                    {frontmatter.version && (
-                      <span className="text-[10px] font-mono text-stone-400">
-                        v{frontmatter.version}
+                <div
+                  key={skill.id}
+                  className="bg-white border border-stone-200 rounded-xl p-5 shadow-xs hover:shadow-md hover:border-stone-300 transition-all flex flex-col justify-between"
+                >
+                  <div>
+                    {/* Skill Badge Bar */}
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        <Cpu className="w-2.5 h-2.5" />
+                        {model}
                       </span>
+                      {frontmatter.version && (
+                        <span className="text-[10px] font-mono text-stone-400">
+                          v{frontmatter.version}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Title & Role */}
+                    <h3 className="font-bold text-stone-900 hover:text-emerald-700 text-base mb-1 transition-colors">
+                      <button
+                        type="button"
+                        onClick={() => onSelectFile(skill.id)}
+                        className="text-left cursor-pointer"
+                      >
+                        {frontmatter.title || skill.name}
+                      </button>
+                    </h3>
+                    <p className="text-xs text-stone-600 font-medium mb-3 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-amber-500 shrink-0" />
+                      <span>{role}</span>
+                    </p>
+
+                    {/* Inputs schema */}
+                    {inputs.length > 0 && (
+                      <div className="mb-4 bg-stone-50 p-2.5 rounded-lg border border-stone-100">
+                        <span className="text-[10px] uppercase font-semibold text-stone-400 tracking-wider block mb-1.5">
+                          Expected Inputs:
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {inputs.map((inp: string) => (
+                            <span
+                              key={inp}
+                              className="px-1.5 py-0.5 rounded bg-white text-stone-700 font-mono text-[10px] border border-stone-200"
+                            >
+                              {inp}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     )}
+
+                    {/* Dependent Projects */}
+                    <div className="mb-4">
+                      <span className="text-[10px] uppercase font-semibold text-stone-400 tracking-wider block mb-1">
+                        Powering Projects ({consumingProjects.length}):
+                      </span>
+                      {consumingProjects.length > 0 ? (
+                        <div className="space-y-1">
+                          {consumingProjects.map((p) => (
+                            <button
+                              type="button"
+                              key={p.id}
+                              onClick={() => onSelectFile(p.id)}
+                              className="w-full text-left text-xs text-stone-600 hover:text-blue-600 cursor-pointer flex items-center gap-1 truncate"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                              <span className="truncate">{p.frontmatter.title || p.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-stone-400 italic">
+                          No projects currently linked
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Title & Role */}
-                  <h3 className="font-bold text-stone-900 hover:text-emerald-700 text-base mb-1 transition-colors">
+                  {/* Footer Buttons */}
+                  <div className="pt-3 border-t border-stone-100 flex items-center justify-between gap-2">
                     <button
                       type="button"
                       onClick={() => onSelectFile(skill.id)}
-                      className="text-left cursor-pointer"
+                      className="inline-flex items-center gap-1 text-xs text-stone-600 hover:text-stone-900 font-medium px-2 py-1 hover:bg-stone-100 rounded"
                     >
-                      {frontmatter.title || skill.name}
+                      <Edit3 className="w-3.5 h-3.5" />
+                      Edit Spec
                     </button>
-                  </h3>
-                  <p className="text-xs text-stone-600 font-medium mb-3 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-amber-500 shrink-0" />
-                    <span>{role}</span>
-                  </p>
 
-                  {/* Inputs schema */}
-                  {inputs.length > 0 && (
-                    <div className="mb-4 bg-stone-50 p-2.5 rounded-lg border border-stone-100">
-                      <span className="text-[10px] uppercase font-semibold text-stone-400 tracking-wider block mb-1.5">
-                        Expected Inputs:
-                      </span>
-                      <div className="flex flex-wrap gap-1">
-                        {inputs.map((inp: string) => (
-                          <span
-                            key={inp}
-                            className="px-1.5 py-0.5 rounded bg-white text-stone-700 font-mono text-[10px] border border-stone-200"
-                          >
-                            {inp}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Dependent Projects */}
-                  <div className="mb-4">
-                    <span className="text-[10px] uppercase font-semibold text-stone-400 tracking-wider block mb-1">
-                      Powering Projects ({consumingProjects.length}):
-                    </span>
-                    {consumingProjects.length > 0 ? (
-                      <div className="space-y-1">
-                        {consumingProjects.map((p) => (
-                          <button
-                            type="button"
-                            key={p.id}
-                            onClick={() => onSelectFile(p.id)}
-                            className="w-full text-left text-xs text-stone-600 hover:text-blue-600 cursor-pointer flex items-center gap-1 truncate"
-                          >
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                            <span className="truncate">{p.frontmatter.title || p.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-[11px] text-stone-400 italic">
-                        No projects currently linked
-                      </span>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => onOpenSkillPlayground(skill)}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white shadow-xs transition-colors"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-amber-400" />
+                      Assemble Prompt
+                    </button>
                   </div>
                 </div>
-
-                {/* Footer Buttons */}
-                <div className="pt-3 border-t border-stone-100 flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onSelectFile(skill.id)}
-                    className="inline-flex items-center gap-1 text-xs text-stone-600 hover:text-stone-900 font-medium px-2 py-1 hover:bg-stone-100 rounded"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    Edit Spec
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => onOpenSkillPlayground(skill)}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white shadow-xs transition-colors"
-                  >
-                    <Zap className="w-3.5 h-3.5 text-amber-400" />
-                    Assemble Prompt
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
         )}
 
         {/* Skill Specification Guide Card */}
@@ -239,19 +243,30 @@ export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
             </button>
           </div>
           <p className="text-xs text-stone-300 leading-relaxed max-w-3xl mb-4">
-            Each skill file follows standard markdown conventions: YAML frontmatter specifies metadata (role,
-            model, inputs), followed by markdown headings outlining the operational guidelines, edge cases,
-            and parameterized prompt templates wrapped in codeblocks.
+            Each skill file follows standard markdown conventions: YAML frontmatter specifies
+            metadata (role, model, inputs), followed by markdown headings outlining the operational
+            guidelines, edge cases, and parameterized prompt templates wrapped in codeblocks.
           </p>
           <div className="keep-light-palette bg-stone-950 p-4 rounded-xl border border-stone-800 font-mono text-xs text-stone-300 overflow-x-auto">
-            <span className="text-stone-500">---</span><br />
-            <span className="text-amber-300">role</span>: Principal Technical Researcher<br />
-            <span className="text-amber-300">model</span>: gemini-2.5-flash<br />
-            <span className="text-amber-300">inputs</span>: [query_objective, raw_sources]<br />
-            <span className="text-stone-500">---</span><br /><br />
-            <span className="text-stone-400"># 🤖 Agent Skill: Research Synthesizer</span><br />
-            <span className="text-stone-400">## Operational Rules</span><br />
-            <span className="text-stone-400">1. Verify all quantitative claims with citations.</span><br />
+            <span className="text-stone-500">---</span>
+            <br />
+            <span className="text-amber-300">role</span>: Principal Technical Researcher
+            <br />
+            <span className="text-amber-300">model</span>: gemini-2.5-flash
+            <br />
+            <span className="text-amber-300">inputs</span>: [query_objective, raw_sources]
+            <br />
+            <span className="text-stone-500">---</span>
+            <br />
+            <br />
+            <span className="text-stone-400"># 🤖 Agent Skill: Research Synthesizer</span>
+            <br />
+            <span className="text-stone-400">## Operational Rules</span>
+            <br />
+            <span className="text-stone-400">
+              1. Verify all quantitative claims with citations.
+            </span>
+            <br />
             <span className="text-stone-400">2. Generate structured markdown output.</span>
           </div>
         </div>

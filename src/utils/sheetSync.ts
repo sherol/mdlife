@@ -98,11 +98,11 @@ async function sheetsFetch(path: string, init: RequestInit = {}): Promise<any> {
     const text = await res.text();
     if (/SERVICE_DISABLED|has not been used|is disabled/i.test(text)) {
       throw new Error(
-        'The Google Sheets API is turned off for mdlife. Enable it in Google Cloud Console → APIs & Services, then try again.'
+        'The Google Sheets API is turned off for mdlife. Enable it in Google Cloud Console → APIs & Services, then try again.',
       );
     }
     throw new Error(
-      `mdlife can't open this spreadsheet (${res.status}). Choose it again with the Google Picker ("Import SheetSync sheet" under Notes) to grant access.`
+      `mdlife can't open this spreadsheet (${res.status}). Choose it again with the Google Picker ("Import SheetSync sheet" under Notes) to grant access.`,
     );
   }
   if (!res.ok) {
@@ -112,9 +112,11 @@ async function sheetsFetch(path: string, init: RequestInit = {}): Promise<any> {
 }
 
 /** Returns the spreadsheet title and its tab names. Also confirms mdlife can open it. */
-export async function getSpreadsheetInfo(spreadsheetId: string): Promise<{ title: string; tabs: string[] }> {
+export async function getSpreadsheetInfo(
+  spreadsheetId: string,
+): Promise<{ title: string; tabs: string[] }> {
   const data = await sheetsFetch(
-    `${spreadsheetId}?includeGridData=false&fields=properties.title,sheets.properties.title`
+    `${spreadsheetId}?includeGridData=false&fields=properties.title,sheets.properties.title`,
   );
   return {
     title: data.properties?.title || 'Untitled spreadsheet',
@@ -123,7 +125,10 @@ export async function getSpreadsheetInfo(spreadsheetId: string): Promise<{ title
 }
 
 /** Reads every row of a tab, keyed by the header row. */
-export async function readRows(spreadsheetId: string, tab: string): Promise<{ headers: string[]; rows: SheetSyncRow[] }> {
+export async function readRows(
+  spreadsheetId: string,
+  tab: string,
+): Promise<{ headers: string[]; rows: SheetSyncRow[] }> {
   const data = await sheetsFetch(`${spreadsheetId}/values/${encodeURIComponent(quoteTab(tab))}`);
   const [headers = [], ...body]: string[][] = data.values || [];
   const rows = body.map((cells, i) => ({
@@ -183,11 +188,15 @@ export function parseLayout(rows: SheetSyncRow[]): SheetSyncLayout {
     try {
       const parsed = JSON.parse(value);
       if (Array.isArray(parsed.categories)) {
-        layout.categories = parsed.categories.filter((c: any) => c?.sheetName && Array.isArray(c.fields));
+        layout.categories = parsed.categories.filter(
+          (c: any) => c?.sheetName && Array.isArray(c.fields),
+        );
       }
       if (Array.isArray(parsed.lists)) {
         layout.lists = Object.fromEntries(
-          parsed.lists.filter((l: any) => l?.id).map((l: any) => [l.id, Array.isArray(l.items) ? l.items : []])
+          parsed.lists
+            .filter((l: any) => l?.id)
+            .map((l: any) => [l.id, Array.isArray(l.items) ? l.items : []]),
         );
       }
     } catch {
@@ -211,7 +220,7 @@ export async function markSheetChanged(spreadsheetId: string): Promise<void> {
   if (existing) {
     await sheetsFetch(
       `${spreadsheetId}/values/${encodeURIComponent(`${quoteTab(CONFIG_TAB)}!A${existing.rowNumber}:C${existing.rowNumber}`)}?valueInputOption=USER_ENTERED`,
-      { method: 'PUT', body: JSON.stringify({ values: [values] }) }
+      { method: 'PUT', body: JSON.stringify({ values: [values] }) },
     );
   } else {
     await appendValues(spreadsheetId, CONFIG_TAB, values);
@@ -257,10 +266,14 @@ export function toCell(type: string | undefined, value: string): string | number
   return `'${value}`;
 }
 
-async function appendValues(spreadsheetId: string, tab: string, row: (string | number)[]): Promise<void> {
+async function appendValues(
+  spreadsheetId: string,
+  tab: string,
+  row: (string | number)[],
+): Promise<void> {
   await sheetsFetch(
     `${spreadsheetId}/values/${encodeURIComponent(`${quoteTab(tab)}!A1`)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-    { method: 'POST', body: JSON.stringify({ values: [row] }) }
+    { method: 'POST', body: JSON.stringify({ values: [row] }) },
   );
 }
 
@@ -283,7 +296,7 @@ export async function upsertRow(
   tab: string,
   values: Record<string, string>,
   id?: string,
-  options: UpsertOptions = {}
+  options: UpsertOptions = {},
 ): Promise<string> {
   const { headers, rows } = await readRows(spreadsheetId, tab);
   if (headers.length === 0) throw new Error(`Tab "${tab}" has no header row.`);
@@ -299,13 +312,19 @@ export async function upsertRow(
       : undefined;
 
   if (existing) {
-    const meta: Record<string, string> = { 'Saved At': savedAt, ...(existing.values.ID ? {} : { ID: rowId }) };
+    const meta: Record<string, string> = {
+      'Saved At': savedAt,
+      ...(existing.values.ID ? {} : { ID: rowId }),
+    };
     const data = headers
       .map((h, i) => ({ h, i }))
       .filter(({ h }) => h in meta || (!META_HEADERS.has(h) && h in values))
       .map(({ h, i }) => {
         const a1 = `${columnLetter(i + 1)}${existing.rowNumber}`;
-        return { range: `${quoteTab(tab)}!${a1}:${a1}`, values: [[cell(h, h in meta ? meta[h] : values[h])]] };
+        return {
+          range: `${quoteTab(tab)}!${a1}:${a1}`,
+          values: [[cell(h, h in meta ? meta[h] : values[h])]],
+        };
       });
     await sheetsFetch(`${spreadsheetId}/values:batchUpdate`, {
       method: 'POST',
@@ -313,7 +332,11 @@ export async function upsertRow(
     });
   } else {
     const full: Record<string, string> = { ...values, ID: rowId, 'Saved At': savedAt };
-    await appendValues(spreadsheetId, tab, headers.map((h) => (h in full ? cell(h, full[h]) : '')));
+    await appendValues(
+      spreadsheetId,
+      tab,
+      headers.map((h) => (h in full ? cell(h, full[h]) : '')),
+    );
   }
   return rowId;
 }

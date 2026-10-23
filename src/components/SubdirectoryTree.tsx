@@ -97,7 +97,7 @@ export const SubdirectoryTree: React.FC<SubdirectoryTreeProps> = ({
   }
 
   const sortedGroups = Array.from(groups.values()).sort((a, b) =>
-    subfolders?.sort ? subfolders.sort(a.slug, b.slug) : a.slug.localeCompare(b.slug)
+    subfolders?.sort ? subfolders.sort(a.slug, b.slug) : a.slug.localeCompare(b.slug),
   );
 
   return (

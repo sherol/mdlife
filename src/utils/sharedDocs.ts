@@ -45,7 +45,10 @@ export function getNoteBody(content: string): string {
 /** Replaces the note body, keeping its frontmatter block verbatim. */
 export function withNoteBody(content: string, body: string): string {
   const { frontmatterBlock } = splitFrontmatterBlock(content);
-  const block = frontmatterBlock && !frontmatterBlock.endsWith('\n') ? `${frontmatterBlock}\n` : frontmatterBlock;
+  const block =
+    frontmatterBlock && !frontmatterBlock.endsWith('\n')
+      ? `${frontmatterBlock}\n`
+      : frontmatterBlock;
   return block + body;
 }
 
@@ -162,7 +165,7 @@ export async function syncNoteWithDoc(
   noteContent: string,
   previous: DocSyncState | undefined,
   hasUnsavedEdits: boolean,
-  api: DocApi
+  api: DocApi,
 ): Promise<DocSyncOutcome> {
   const meta = await api.getMeta(docId);
   if (!meta || meta.trashed) return { kind: 'missing' };
@@ -212,7 +215,13 @@ export async function syncNoteWithDoc(
     const after = await api.replaceContent(docId, working);
     // Record the doc as Google stores it (its markdown export may differ cosmetically from ours).
     const exported = normalizeMarkdown(await api.exportMarkdown(docId));
-    state = { docId, version: after.version, docBase: exported, localBase: working, syncedAt: Date.now() };
+    state = {
+      docId,
+      version: after.version,
+      docBase: exported,
+      localBase: working,
+      syncedAt: Date.now(),
+    };
     pushed = true;
   }
 
@@ -229,7 +238,7 @@ export async function syncNoteWithDoc(
 export function stateAfterConflictResolution(
   docId: string,
   remoteBody: string,
-  version: string
+  version: string,
 ): DocSyncState {
   return { docId, version, docBase: remoteBody, localBase: remoteBody, syncedAt: Date.now() };
 }

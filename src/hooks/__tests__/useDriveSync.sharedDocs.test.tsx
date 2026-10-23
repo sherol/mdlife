@@ -86,13 +86,16 @@ function useHarness() {
     activeFileId: null, // drive syncs explicitly in tests
   });
   const edit = (fn: (c: string) => string) => {
-    updateFiles((prev) => prev.map((f) => (f.id === NOTE.id ? { ...f, content: fn(f.content) } : f)));
+    updateFiles((prev) =>
+      prev.map((f) => (f.id === NOTE.id ? { ...f, content: fn(f.content) } : f)),
+    );
     sync.markUnsaved([NOTE.id]);
   };
   return { ...sync, files, filesRef, edit };
 }
 
-const content = (h: { current: ReturnType<typeof useHarness> }) => h.current.filesRef.current[0].content;
+const content = (h: { current: ReturnType<typeof useHarness> }) =>
+  h.current.filesRef.current[0].content;
 
 async function setupShared() {
   const { result } = renderHook(() => useHarness());

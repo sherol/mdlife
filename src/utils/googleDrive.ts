@@ -150,12 +150,20 @@ function folderNameMatches(targetName: string, candidateName: string): boolean {
   const nameLower = (candidateName || '').toLowerCase().trim();
   if (nameLower === targetLower) return true;
   // Check standard category aliases
-  if (targetLower === 'skills' && (nameLower === 'agent skills' || nameLower === 'agent-skills' || nameLower === '3. agent skills' || nameLower === '3. skills')) return true;
+  if (
+    targetLower === 'skills' &&
+    (nameLower === 'agent skills' ||
+      nameLower === 'agent-skills' ||
+      nameLower === '3. agent skills' ||
+      nameLower === '3. skills')
+  )
+    return true;
   if (targetLower === 'goals' && nameLower === '1. goals') return true;
   if (targetLower === 'projects' && nameLower === '2. projects') return true;
   if (targetLower === 'notes' && nameLower === '4. notes') return true;
   if (targetLower === 'archive' && nameLower === '5. archive') return true;
-  if (targetLower === ROOT_FOLDER_NAME.toLowerCase() && nameLower.includes('markdown life')) return true;
+  if (targetLower === ROOT_FOLDER_NAME.toLowerCase() && nameLower.includes('markdown life'))
+    return true;
   return false;
 }
 
@@ -241,16 +249,16 @@ export async function getVaultFolderHierarchy(): Promise<{
 
 const splitFolderPath = (folderPath: string) =>
   folderPath && folderPath !== '.' && folderPath !== '/'
-    ? folderPath.split('/').map((s) => s.trim()).filter(Boolean)
+    ? folderPath
+        .split('/')
+        .map((s) => s.trim())
+        .filter(Boolean)
     : [];
 
 /**
  * Resolves or creates a nested sub-directory path inside Google Drive (e.g. "goals/2026" or "projects/ai-agent")
  */
-export async function resolveDriveFolderId(
-  folderPath: string,
-  rootId: string
-): Promise<string> {
+export async function resolveDriveFolderId(folderPath: string, rootId: string): Promise<string> {
   let currentParentId = rootId;
   for (const part of splitFolderPath(folderPath)) {
     currentParentId = await getOrCreateFolder(part, currentParentId);
@@ -297,10 +305,12 @@ const isRemoteNewer = (remote?: string, known?: string) =>
   !!remote && !!known && Date.parse(remote) > Date.parse(known);
 
 async function getFileMetadata(
-  fileId: string
+  fileId: string,
 ): Promise<{ id: string; modifiedTime?: string; trashed?: boolean } | null> {
   try {
-    const res = await driveFetch(`files/${encodeURIComponent(fileId)}?fields=id,modifiedTime,trashed`);
+    const res = await driveFetch(
+      `files/${encodeURIComponent(fileId)}?fields=id,modifiedTime,trashed`,
+    );
     return await res.json();
   } catch (err) {
     if (isNotFound(err)) return null;
@@ -316,7 +326,7 @@ async function uploadContent(fileId: string, content: string): Promise<{ modifie
       method: 'PATCH',
       headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
       body: content,
-    }
+    },
   );
   return res.json();
 }
@@ -325,7 +335,7 @@ async function uploadContent(fileId: string, content: string): Promise<{ modifie
 async function createFileWithContent(
   fileName: string,
   parentId: string,
-  content: string
+  content: string,
 ): Promise<{ id: string; modifiedTime?: string }> {
   const boundary = `mdlife-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   const metadata = { name: fileName, parents: [parentId], mimeType: 'text/markdown' };
@@ -342,7 +352,9 @@ async function createFileWithContent(
 }
 
 /** Downloads a Drive file's current content and modifiedTime. */
-export async function downloadDriveFile(fileId: string): Promise<{ content: string; modifiedTime?: string }> {
+export async function downloadDriveFile(
+  fileId: string,
+): Promise<{ content: string; modifiedTime?: string }> {
   const meta = await getFileMetadata(fileId);
   const res = await driveFetch(`files/${encodeURIComponent(fileId)}?alt=media`);
   return { content: await res.text(), modifiedTime: meta?.modifiedTime };
@@ -356,7 +368,10 @@ export async function downloadDriveFile(fileId: string): Promise<{ content: stri
  * - Otherwise: resolves the folder (cached) and updates an exact-name match or creates the file.
  * Saves of the same local file are serialized.
  */
-export function saveFileToDrive(file: VaultFile, targetFolderId?: string): Promise<DriveSaveResult> {
+export function saveFileToDrive(
+  file: VaultFile,
+  targetFolderId?: string,
+): Promise<DriveSaveResult> {
   return withDriveFileLock(file.id, async () => {
     if (file.driveFileId) {
       const meta = await getFileMetadata(file.driveFileId);
@@ -402,7 +417,7 @@ export function saveFileToDrive(file: VaultFile, targetFolderId?: string): Promi
 export function deleteFileFromDrive(
   folderName: string,
   fileName: string,
-  driveFileId?: string
+  driveFileId?: string,
 ): Promise<boolean> {
   const cleanName = `${fileName.replace(/\.md$/i, '')}.md`;
   return withDriveFileLock(`${folderName}/${cleanName}`, async () => {
@@ -439,7 +454,7 @@ export function renameFileInDrive(
   folderName: string,
   oldFileName: string,
   newFileName: string,
-  driveFileId?: string
+  driveFileId?: string,
 ): Promise<{ renamed: boolean; fileId?: string; modifiedTime?: string }> {
   const cleanNewName = newFileName.endsWith('.md') ? newFileName : `${newFileName}.md`;
   const cleanOldName = `${oldFileName.replace(/\.md$/i, '')}.md`;
@@ -503,7 +518,7 @@ export function subscribeDriveSaves(listener: DriveSaveListener): () => void {
  */
 export async function syncAllFilesToDrive(
   files: VaultFile[],
-  onProgress?: (current: number, total: number, fileName: string) => void
+  onProgress?: (current: number, total: number, fileName: string) => void,
 ): Promise<{ uploaded: number; updated: number; conflicts: number }> {
   const { rootId } = await getVaultFolderHierarchy();
 
@@ -553,7 +568,7 @@ export async function syncAllFilesToDrive(
 async function mapConcurrent<T, R>(
   items: T[],
   concurrency: number,
-  fn: (item: T) => Promise<R | null>
+  fn: (item: T) => Promise<R | null>,
 ): Promise<R[]> {
   const results: R[] = [];
   for (let i = 0; i < items.length; i += concurrency) {
@@ -604,7 +619,9 @@ function normalizeTopLevelFolder(name: string): string {
  * Folder listing errors abort the import (so a partial listing is never mistaken for deletions);
  * individual download failures are reported in `failedPaths`.
  */
-export async function importVaultFromDrive(options: ImportDriveOptions = {}): Promise<DriveVaultSnapshot> {
+export async function importVaultFromDrive(
+  options: ImportDriveOptions = {},
+): Promise<DriveVaultSnapshot> {
   const { onProgress } = options;
   const rootId = await getVaultRootId();
   const importedFiles: VaultFile[] = [];
@@ -618,10 +635,12 @@ export async function importVaultFromDrive(options: ImportDriveOptions = {}): Pr
     const parentQuery = `'${escapeDriveQuery(folderId)}' in parents and trashed = false`;
 
     // 1. Scan files in this directory
-    const items = await listAll<{ id: string; name: string; modifiedTime?: string; mimeType?: string }>(
-      `${parentQuery} and mimeType != '${FOLDER_MIME}'`,
-      'id,name,modifiedTime,mimeType'
-    );
+    const items = await listAll<{
+      id: string;
+      name: string;
+      modifiedTime?: string;
+      mimeType?: string;
+    }>(`${parentQuery} and mimeType != '${FOLDER_MIME}'`, 'id,name,modifiedTime,mimeType');
 
     const eligibleItems = items.filter((item) => {
       if (item.mimeType?.startsWith('application/vnd.google-apps.')) return false;
@@ -706,7 +725,7 @@ export async function importVaultFromDrive(options: ImportDriveOptions = {}): Pr
     // 2. Scan child sub-directories in this directory
     const subDirs = await listAll<{ id: string; name: string }>(
       `${parentQuery} and mimeType = '${FOLDER_MIME}'`,
-      'id,name'
+      'id,name',
     );
     for (const subDir of subDirs) {
       // Backup snapshots are stored in the vault folder but are not part of the vault itself
@@ -764,7 +783,7 @@ export async function getProjectFolderShareInfo(projectPath: string): Promise<Pr
 
   // 1. Fetch folder metadata including webViewLink and owners
   const folderRes = await driveFetch(
-    `files/${encodeURIComponent(folderId)}?fields=id,name,webViewLink,owners(displayName,emailAddress)`
+    `files/${encodeURIComponent(folderId)}?fields=id,name,webViewLink,owners(displayName,emailAddress)`,
   );
   const folderData = await folderRes.json();
 
@@ -803,7 +822,7 @@ export async function shareProjectWithGoogleAccount(
   folderId: string,
   emailAddress: string,
   role: 'reader' | 'commenter' | 'writer' = 'reader',
-  sendNotificationEmail: boolean = true
+  sendNotificationEmail: boolean = true,
 ): Promise<DrivePermission> {
   const cleanEmail = emailAddress.trim().toLowerCase();
   if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -835,15 +854,18 @@ export async function shareProjectWithGoogleAccount(
 export async function updateProjectPermissionRole(
   folderId: string,
   permissionId: string,
-  newRole: 'reader' | 'commenter' | 'writer'
+  newRole: 'reader' | 'commenter' | 'writer',
 ): Promise<DrivePermission> {
-  const res = await driveFetch(`files/${folderId}/permissions/${permissionId}?fields=id,role,emailAddress,displayName`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      role: newRole,
-    }),
-  });
+  const res = await driveFetch(
+    `files/${folderId}/permissions/${permissionId}?fields=id,role,emailAddress,displayName`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        role: newRole,
+      }),
+    },
+  );
 
   return await res.json();
 }
@@ -853,14 +875,13 @@ export async function updateProjectPermissionRole(
  */
 export async function removeProjectPermission(
   folderId: string,
-  permissionId: string
+  permissionId: string,
 ): Promise<boolean> {
   await driveFetch(`files/${folderId}/permissions/${permissionId}`, {
     method: 'DELETE',
   });
   return true;
 }
-
 
 // ---------------------------------------------------------------------------
 // Shared Google Docs (a note mirrored to a Google Doc that someone else edits in Docs)
@@ -894,7 +915,7 @@ export async function getSharedDocMeta(docId: string): Promise<SharedDocMeta | n
 /** Exports a Google Doc as Markdown (Google converts headings, lists, tables, links, ...). */
 export async function exportDocAsMarkdown(docId: string): Promise<string> {
   const res = await driveFetch(
-    `files/${encodeURIComponent(docId)}/export?mimeType=${encodeURIComponent('text/markdown')}`
+    `files/${encodeURIComponent(docId)}/export?mimeType=${encodeURIComponent('text/markdown')}`,
   );
   return res.text();
 }
@@ -903,7 +924,11 @@ export async function exportDocAsMarkdown(docId: string): Promise<string> {
  * Creates a Google Doc from markdown in the note's vault folder. Drive converts the markdown
  * into native Docs formatting.
  */
-export async function createSharedDoc(title: string, folder: string, markdown: string): Promise<SharedDocMeta> {
+export async function createSharedDoc(
+  title: string,
+  folder: string,
+  markdown: string,
+): Promise<SharedDocMeta> {
   const parentId = await resolveDriveFolderId(folder, await getVaultRootId());
   const boundary = `mdlife-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   const metadata = { name: title, parents: [parentId], mimeType: GOOGLE_DOC_MIME };
@@ -917,7 +942,7 @@ export async function createSharedDoc(title: string, folder: string, markdown: s
       method: 'POST',
       headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
       body,
-    }
+    },
   );
   return res.json();
 }
@@ -926,14 +951,17 @@ export async function createSharedDoc(title: string, folder: string, markdown: s
  * Replaces the whole content of a Google Doc with converted markdown.
  * (Drive can only replace a doc's content as a whole; Docs keeps the old one in version history.)
  */
-export async function replaceSharedDocContent(docId: string, markdown: string): Promise<SharedDocMeta> {
+export async function replaceSharedDocContent(
+  docId: string,
+  markdown: string,
+): Promise<SharedDocMeta> {
   const res = await driveFetch(
     `${UPLOAD_API}files/${encodeURIComponent(docId)}?uploadType=media&fields=${encodeURIComponent(DOC_META_FIELDS)}`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
       body: markdown,
-    }
+    },
   );
   return res.json();
 }
@@ -942,8 +970,8 @@ export async function replaceSharedDocContent(docId: string, markdown: string): 
 export async function getFilePermissions(fileId: string): Promise<DrivePermission[]> {
   const res = await driveFetch(
     `files/${encodeURIComponent(fileId)}/permissions?fields=${encodeURIComponent(
-      'permissions(id,type,role,emailAddress,displayName,photoLink)'
-    )}`
+      'permissions(id,type,role,emailAddress,displayName,photoLink)',
+    )}`,
   );
   const data = await res.json();
   return Array.isArray(data.permissions) ? data.permissions : [];
@@ -988,7 +1016,7 @@ export interface BackupResult {
  */
 export async function backupVaultToDrive(
   files: VaultFile[],
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
 ): Promise<BackupResult> {
   const rootId = await getVaultRootId();
   const backupRootId = await getOrCreateFolder(BACKUP_FOLDER_NAME, rootId);

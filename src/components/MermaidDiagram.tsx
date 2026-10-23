@@ -100,7 +100,9 @@ export const MermaidDiagram: React.FC<{ code: string }> = ({ code }) => {
       <div className="my-3 rounded-lg border border-amber-300 overflow-hidden">
         <div className="flex items-start gap-2 px-3 py-2 bg-amber-50 text-amber-900 text-xs">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          <span className="whitespace-pre-wrap break-words">Mermaid diagram couldn't be drawn: {error}</span>
+          <span className="whitespace-pre-wrap break-words">
+            Mermaid diagram couldn't be drawn: {error}
+          </span>
         </div>
         <pre className="keep-light-palette bg-stone-950 text-stone-100 p-3.5 text-xs font-mono overflow-x-auto">
           <code>{code}</code>

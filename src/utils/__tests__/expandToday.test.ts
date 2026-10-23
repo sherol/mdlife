@@ -22,7 +22,10 @@ describe('expandTodayTokens', () => {
   });
 
   it('places the caret after the date when it was inside the token', () => {
-    expect(expandTodayTokens('x @today y', 5, D)).toEqual({ text: `x ${D} y`, cursor: 2 + D.length });
+    expect(expandTodayTokens('x @today y', 5, D)).toEqual({
+      text: `x ${D} y`,
+      cursor: 2 + D.length,
+    });
   });
 
   it('handles several tokens and is case-insensitive', () => {

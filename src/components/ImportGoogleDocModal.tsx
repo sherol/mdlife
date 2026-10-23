@@ -91,7 +91,7 @@ export const ImportGoogleDocModal: React.FC<ImportGoogleDocModalProps> = ({
           setIsOpeningPicker(false);
           setErrorMessage(
             err.message ||
-              'Could not open Google Picker. You can still paste the Google Doc link or ID below.'
+              'Could not open Google Picker. You can still paste the Google Doc link or ID below.',
           );
         },
       });
@@ -99,7 +99,7 @@ export const ImportGoogleDocModal: React.FC<ImportGoogleDocModalProps> = ({
       setIsOpeningPicker(false);
       setErrorMessage(
         err.message ||
-          'Could not initialize Google Picker. You can paste your document URL directly into the field below.'
+          'Could not initialize Google Picker. You can paste your document URL directly into the field below.',
       );
     }
   };
@@ -124,7 +124,9 @@ export const ImportGoogleDocModal: React.FC<ImportGoogleDocModalProps> = ({
 
     const docId = selectedDoc?.id || extractGoogleDocId(docInput);
     if (!docId) {
-      setErrorMessage('Please provide a valid Google Doc URL or ID, or choose one using the file picker.');
+      setErrorMessage(
+        'Please provide a valid Google Doc URL or ID, or choose one using the file picker.',
+      );
       return;
     }
 
@@ -184,7 +186,7 @@ export const ImportGoogleDocModal: React.FC<ImportGoogleDocModalProps> = ({
     } catch (err: any) {
       console.error('Import error:', err);
       setErrorMessage(
-        err.message || 'Failed to import document. Ensure the Google Doc exists and is accessible.'
+        err.message || 'Failed to import document. Ensure the Google Doc exists and is accessible.',
       );
     } finally {
       setIsImporting(false);

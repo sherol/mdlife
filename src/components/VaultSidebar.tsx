@@ -188,13 +188,13 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
     for (const f of files) map.set(f.id, getTopLevelFolder(f));
     return map;
   }, [files]);
-  const getTopLevelCategory = (file: VaultFile): string => topFolderById.get(file.id) ?? getTopLevelFolder(file);
+  const getTopLevelCategory = (file: VaultFile): string =>
+    topFolderById.get(file.id) ?? getTopLevelFolder(file);
 
   // Standard folders plus any custom top-level folders present in the vault
   const folders = useMemo(
     () =>
-      Array.from(new Set<string>([...STANDARD_FOLDERS, ...topFolderById.values()]))
-        .sort((a, b) => {
+      Array.from(new Set<string>([...STANDARD_FOLDERS, ...topFolderById.values()])).sort((a, b) => {
         const orderA = folderOrder[a] ?? 50;
         const orderB = folderOrder[b] ?? 50;
         if (orderA !== orderB) {
@@ -202,7 +202,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
         }
         return a.localeCompare(b);
       }),
-    [topFolderById]
+    [topFolderById],
   );
 
   // Task progress badges: parse each file once per content change, not on every render
@@ -303,7 +303,10 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
     const isProtected = isTrailheadFile(file);
     const progress = progressById.get(file.id) ?? getTaskProgress(file.content);
     let title = file.frontmatter.title || file.name.replace(/\.md$/, '');
-    if ((title.toUpperCase() === 'SKILL' || title.toLowerCase() === 'untitled') && file.folder.includes('/')) {
+    if (
+      (title.toUpperCase() === 'SKILL' || title.toLowerCase() === 'untitled') &&
+      file.folder.includes('/')
+    ) {
       const sub = file.folder.split('/').pop() || '';
       title = `${formatSlugLabel(sub)} (${file.name.replace(/\.md$/, '')})`;
     }
@@ -383,7 +386,9 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
           title={file.path}
           className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
         >
-          <span className={isSelected ? 'text-white' : ''}>{getCategoryIcon(getTopLevelCategory(file))}</span>
+          <span className={isSelected ? 'text-white' : ''}>
+            {getCategoryIcon(getTopLevelCategory(file))}
+          </span>
 
           <span className="truncate flex-1">
             <span className="truncate block text-xs">{title}</span>
@@ -406,8 +411,8 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                 isSelected
                   ? 'bg-stone-800 text-stone-200'
                   : progress.completed === progress.total
-                  ? 'bg-emerald-100 text-emerald-800'
-                  : 'bg-stone-100 text-stone-600'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-stone-100 text-stone-600'
               }`}
               aria-label={`${progress.completed} of ${progress.total} tasks done`}
             >
@@ -538,7 +543,8 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
   const archiveSubfolders: SubfolderVariant = {
     rowClassName:
       'flex items-center justify-between px-2 py-1 text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 group/year',
-    toggleClassName: 'flex items-center gap-1.5 font-medium text-xs text-stone-700 hover:text-stone-900 cursor-pointer',
+    toggleClassName:
+      'flex items-center gap-1.5 font-medium text-xs text-stone-700 hover:text-stone-900 cursor-pointer',
     countClassName: 'text-[10px] text-stone-400 font-mono',
     renderIcon: () => <Calendar className="w-3.5 h-3.5 text-purple-600 shrink-0" />,
     renderLabel: (year) => <span className="font-mono font-semibold">{year}</span>,
@@ -587,7 +593,11 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
     const folderFiles = filteredFiles.filter((f) => getTopLevelCategory(f) === folder);
 
     // If filtering by activeCategoryFilter and not matching, hide
-    if (folderFiles.length === 0 && activeCategoryFilter !== 'all' && activeCategoryFilter !== folder) {
+    if (
+      folderFiles.length === 0 &&
+      activeCategoryFilter !== 'all' &&
+      activeCategoryFilter !== folder
+    ) {
       return null;
     }
 
@@ -656,7 +666,9 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
                 type="button"
                 id={`quick-add-${folder}`}
                 onClick={() =>
-                  onQuickNewFileInFolder(firstProject ? `projects/${firstProject}` : 'projects/new-project')
+                  onQuickNewFileInFolder(
+                    firstProject ? `projects/${firstProject}` : 'projects/new-project',
+                  )
                 }
                 title="Quick new project file"
                 aria-label="Quick new project file"

@@ -119,7 +119,13 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({ files, onSelectFil
           className="w-full pl-10 pr-4 py-3 text-sm text-stone-900 placeholder:text-stone-400 bg-white focus:outline-hidden"
         />
       </div>
-      <ul ref={listRef} id={listId} role="listbox" aria-label="Files" className="max-h-80 overflow-y-auto p-1.5">
+      <ul
+        ref={listRef}
+        id={listId}
+        role="listbox"
+        aria-label="Files"
+        className="max-h-80 overflow-y-auto p-1.5"
+      >
         {results.length === 0 ? (
           <li className="px-3 py-4 text-center text-xs text-stone-400 italic">No matching files</li>
         ) : (
@@ -133,11 +139,17 @@ export const QuickSwitcher: React.FC<QuickSwitcherProps> = ({ files, onSelectFil
               onMouseEnter={() => setActiveIndex(idx)}
               onClick={() => choose(file)}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer text-xs ${
-                idx === activeIndex ? 'bg-stone-900 text-white' : 'text-stone-700 hover:bg-stone-100'
+                idx === activeIndex
+                  ? 'bg-stone-900 text-white'
+                  : 'text-stone-700 hover:bg-stone-100'
               }`}
             >
-              <FileText className={`w-3.5 h-3.5 shrink-0 ${idx === activeIndex ? 'text-stone-300' : 'text-stone-400'}`} />
-              <span className="truncate font-medium flex-1">{file.frontmatter.title || file.name}</span>
+              <FileText
+                className={`w-3.5 h-3.5 shrink-0 ${idx === activeIndex ? 'text-stone-300' : 'text-stone-400'}`}
+              />
+              <span className="truncate font-medium flex-1">
+                {file.frontmatter.title || file.name}
+              </span>
               <span
                 className={`text-[10px] font-mono truncate max-w-[45%] ${
                   idx === activeIndex ? 'text-stone-300' : 'text-stone-400'

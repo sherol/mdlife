@@ -17,7 +17,10 @@ const modalStack: symbol[] = [];
 
 const getFocusable = (root: HTMLElement): HTMLElement[] =>
   Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-    (el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true' && el.getClientRects().length > 0
+    (el) =>
+      !el.hasAttribute('disabled') &&
+      el.getAttribute('aria-hidden') !== 'true' &&
+      el.getClientRects().length > 0,
   );
 
 interface ModalProps {
@@ -119,7 +122,11 @@ export const Modal: React.FC<ModalProps> = ({
       document.removeEventListener('keydown', handleKeyDown, true);
       const idx = modalStack.indexOf(token);
       if (idx !== -1) modalStack.splice(idx, 1);
-      if (previouslyFocused && typeof previouslyFocused.focus === 'function' && document.contains(previouslyFocused)) {
+      if (
+        previouslyFocused &&
+        typeof previouslyFocused.focus === 'function' &&
+        document.contains(previouslyFocused)
+      ) {
         previouslyFocused.focus();
       }
     };

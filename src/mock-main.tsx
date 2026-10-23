@@ -12,5 +12,5 @@ initFavicon();
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App forceOffline={true} />
-  </StrictMode>
+  </StrictMode>,
 );

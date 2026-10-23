@@ -20,7 +20,10 @@ export interface MergeResult {
 
 /** Normalizes line endings and trailing whitespace so cosmetic differences don't count as edits. */
 export function normalizeMarkdown(text: string): string {
-  const body = text.replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').replace(/\s+$/, '');
+  const body = text
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+$/gm, '')
+    .replace(/\s+$/, '');
   return body ? `${body}\n` : '';
 }
 
@@ -33,10 +36,13 @@ export function mergeThreeWay(base: string, mine: string, theirs: string): Merge
   const t = normalizeMarkdown(theirs);
 
   // Fast paths: only one side changed, or both made the same change.
-  if (m === t || t === b) return { chunks: [{ type: 'ok', lines: toLines(m) }], conflictCount: 0, text: m };
+  if (m === t || t === b)
+    return { chunks: [{ type: 'ok', lines: toLines(m) }], conflictCount: 0, text: m };
   if (m === b) return { chunks: [{ type: 'ok', lines: toLines(t) }], conflictCount: 0, text: t };
 
-  const regions = diff3Merge<string>(toLines(m), toLines(b), toLines(t), { excludeFalseConflicts: true });
+  const regions = diff3Merge<string>(toLines(m), toLines(b), toLines(t), {
+    excludeFalseConflicts: true,
+  });
   const chunks: MergeChunk[] = [];
   let conflictCount = 0;
   for (const region of regions) {

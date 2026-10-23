@@ -1,13 +1,5 @@
 import React, { useMemo } from 'react';
-import {
-  Target,
-  Rocket,
-  Bot,
-  Plus,
-  Calendar,
-  Layers,
-  ChevronRight,
-} from 'lucide-react';
+import { Target, Rocket, Bot, Plus, Calendar, Layers, ChevronRight } from 'lucide-react';
 import { VaultFile } from '../types';
 import { getTaskProgress } from '../utils/markdownParser';
 import { isGoalFile, isProjectFile, isSkillFile } from '../utils/fileKinds';
@@ -37,7 +29,7 @@ export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
     const projects = files.filter(isProjectFile);
     const skills = files.filter(isSkillFile);
     const progressById = new Map(
-      [...goals, ...projects].map((f) => [f.id, getTaskProgress(f.content)] as const)
+      [...goals, ...projects].map((f) => [f.id, getTaskProgress(f.content)] as const),
     );
     return { goals, projects, skills, progressById };
   }, [files]);
@@ -57,8 +49,8 @@ export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
                 Goals → Projects → Agent Skills Matrix
               </h2>
               <p className="text-sm text-stone-600 mt-1 max-w-3xl">
-                Every project exists to deliver a core life goal, and every project can deploy specialized
-                agent skills with markdown prompt templates for autonomous execution.
+                Every project exists to deliver a core life goal, and every project can deploy
+                specialized agent skills with markdown prompt templates for autonomous execution.
               </p>
             </div>
 
@@ -97,7 +89,8 @@ export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
               const goalProgress = progressById.get(goal.id) ?? getTaskProgress(goal.content);
               const linkedProjects = projects.filter((p) => {
                 const goalFilename = goal.name;
-                const matchesGoalId = p.frontmatter.goal_id === goalFilename || p.frontmatter.goal_id === goal.path;
+                const matchesGoalId =
+                  p.frontmatter.goal_id === goalFilename || p.frontmatter.goal_id === goal.path;
                 const matchesLinked = goal.frontmatter.linked_projects?.includes(p.name);
                 const matchesContent = p.content.includes(`[[${goalFilename}]]`);
                 return matchesGoalId || matchesLinked || matchesContent;
@@ -145,7 +138,10 @@ export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
                       <div className="w-48 bg-stone-100 p-2.5 rounded-lg border border-stone-200 shrink-0">
                         <div className="flex justify-between text-xs mb-1 font-medium text-stone-700">
                           <span>Milestones</span>
-                          <span>{goalProgress.completed}/{goalProgress.total} ({goalProgress.percentage}%)</span>
+                          <span>
+                            {goalProgress.completed}/{goalProgress.total} ({goalProgress.percentage}
+                            %)
+                          </span>
                         </div>
                         <div className="w-full h-1.5 bg-stone-200 rounded-full overflow-hidden">
                           <div
@@ -182,7 +178,9 @@ export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
                             progressById.get(project.id) ?? getTaskProgress(project.content);
                           // Determine assigned skills
                           const assignedSkills = skills.filter((s) => {
-                            const inFrontmatter = project.frontmatter.assigned_skills?.includes(s.name);
+                            const inFrontmatter = project.frontmatter.assigned_skills?.includes(
+                              s.name,
+                            );
                             const inContent =
                               project.content.includes(`@${s.name.replace(/\.md$/, '')}`) ||
                               project.content.includes(`[[${s.name}]]`);
@@ -224,7 +222,8 @@ export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
                                     <div className="flex justify-between text-[11px] text-stone-600 font-mono">
                                       <span>Tasks</span>
                                       <span>
-                                        {projectProgress.completed}/{projectProgress.total} ({projectProgress.percentage}%)
+                                        {projectProgress.completed}/{projectProgress.total} (
+                                        {projectProgress.percentage}%)
                                       </span>
                                     </div>
                                     <div className="w-full h-1.5 bg-stone-200 rounded-full overflow-hidden">
@@ -259,8 +258,8 @@ export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
                                         onKeyDown={(e) => e.stopPropagation()}
                                         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-mono cursor-pointer"
                                       >
-                                        <Bot className="w-2.5 h-2.5" />
-                                        @{s.name.replace(/\.md$/, '')}
+                                        <Bot className="w-2.5 h-2.5" />@
+                                        {s.name.replace(/\.md$/, '')}
                                       </button>
                                     ))}
                                   </div>

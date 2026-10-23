@@ -1,8 +1,20 @@
 import React, { useEffect, useId, useState } from 'react';
-import { ExternalLink, FileText, Loader2, RefreshCw, Unlink, UserPlus, AlertTriangle } from 'lucide-react';
+import {
+  ExternalLink,
+  FileText,
+  Loader2,
+  RefreshCw,
+  Unlink,
+  UserPlus,
+  AlertTriangle,
+} from 'lucide-react';
 import { VaultFile } from '../types';
 import { Modal } from './Modal';
-import { DrivePermission, getFilePermissions, shareProjectWithGoogleAccount } from '../utils/googleDrive';
+import {
+  DrivePermission,
+  getFilePermissions,
+  shareProjectWithGoogleAccount,
+} from '../utils/googleDrive';
 import { getLinkedDocId } from '../utils/sharedDocs';
 import type { SharedDocStatus } from '../hooks/useDriveSync';
 
@@ -21,7 +33,8 @@ interface SharedDocModalProps {
   onResolveConflict: () => void;
 }
 
-const docUrl = (docId: string) => `https://docs.google.com/document/d/${encodeURIComponent(docId)}/edit`;
+const docUrl = (docId: string) =>
+  `https://docs.google.com/document/d/${encodeURIComponent(docId)}/edit`;
 
 function loadLastEmail(): string {
   try {
@@ -90,7 +103,7 @@ export const SharedDocModal: React.FC<SharedDocModalProps> = ({
       setMessage(
         email.trim()
           ? `Google Doc created and shared with ${email.trim()} as an editor.`
-          : 'Google Doc created. You can share it with someone below.'
+          : 'Google Doc created. You can share it with someone below.',
       );
     } catch (err: any) {
       setError(err?.message || 'Could not create the Google Doc.');
@@ -107,7 +120,9 @@ export const SharedDocModal: React.FC<SharedDocModalProps> = ({
       const perm = await shareProjectWithGoogleAccount(docId, email, 'writer', notify);
       rememberEmail(email);
       setPeople((prev) => [...(prev || []).filter((p) => p.id !== perm.id), perm]);
-      setMessage(`Shared with ${email.trim()} as an editor${notify ? ' (they were emailed a link)' : ''}.`);
+      setMessage(
+        `Shared with ${email.trim()} as an editor${notify ? ' (they were emailed a link)' : ''}.`,
+      );
     } catch (err: any) {
       setError(err?.message || 'Could not share the Google Doc.');
     } finally {
@@ -197,13 +212,18 @@ export const SharedDocModal: React.FC<SharedDocModalProps> = ({
         </>
       ) : (
         <>
-          {message && <p className="text-xs p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">{message}</p>}
+          {message && (
+            <p className="text-xs p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">
+              {message}
+            </p>
+          )}
 
           {hasConflict && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <div className="flex-1">
-                You and the other editor changed the same lines. Syncing is paused for this note until you choose what to keep.
+                You and the other editor changed the same lines. Syncing is paused for this note
+                until you choose what to keep.
               </div>
               <button
                 type="button"
@@ -234,18 +254,25 @@ export const SharedDocModal: React.FC<SharedDocModalProps> = ({
               <RefreshCw className={`w-3.5 h-3.5 ${status?.syncing ? 'animate-spin' : ''}`} />
               Sync now
             </button>
-            <span className="text-[11px] text-stone-500">Last synced: {formatTime(status?.syncedAt)}</span>
+            <span className="text-[11px] text-stone-500">
+              Last synced: {formatTime(status?.syncedAt)}
+            </span>
           </div>
           {status?.error && <p className="text-xs text-red-600">{status.error}</p>}
 
           <div className="space-y-1.5">
             <div className="text-xs font-semibold text-stone-700">People with access</div>
             {people === null ? (
-              <p className="text-[11px] text-stone-400">{isConnected ? 'Loading…' : 'Connect Google Drive to see who has access.'}</p>
+              <p className="text-[11px] text-stone-400">
+                {isConnected ? 'Loading…' : 'Connect Google Drive to see who has access.'}
+              </p>
             ) : (
               <ul className="space-y-1">
                 {people.map((p) => (
-                  <li key={p.id} className="flex items-center justify-between text-xs text-stone-700">
+                  <li
+                    key={p.id}
+                    className="flex items-center justify-between text-xs text-stone-700"
+                  >
                     <span className="truncate">{p.displayName || p.emailAddress || p.type}</span>
                     <span className="text-[10px] uppercase tracking-wide text-stone-400">
                       {p.role === 'writer' ? 'editor' : p.role}
@@ -266,7 +293,11 @@ export const SharedDocModal: React.FC<SharedDocModalProps> = ({
                 disabled={busy || !isConnected || !email.trim()}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-stone-900 text-white hover:bg-stone-800 disabled:opacity-50 cursor-pointer"
               >
-                {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+                {busy ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <UserPlus className="w-3.5 h-3.5" />
+                )}
                 Share as editor
               </button>
             </div>
@@ -275,7 +306,9 @@ export const SharedDocModal: React.FC<SharedDocModalProps> = ({
           <div className="border-t border-stone-100 pt-3 flex items-center justify-between gap-2">
             {confirmUnlink ? (
               <div className="flex flex-wrap items-center gap-2 text-xs text-stone-600">
-                <span>Stop syncing? The Google Doc stays in Drive; this note stops updating from it.</span>
+                <span>
+                  Stop syncing? The Google Doc stays in Drive; this note stops updating from it.
+                </span>
                 <button
                   type="button"
                   onClick={() => {
