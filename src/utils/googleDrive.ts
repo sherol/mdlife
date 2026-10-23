@@ -1,4 +1,4 @@
-import { VaultFile } from '../types';
+import { FileCategory, VaultFile } from '../types';
 import { getAccessToken, markTokenExpired } from './googleAuth';
 import { parseFrontmatter } from './markdownParser';
 import { isDriveSyncDisabled } from './storageKeys';
@@ -98,7 +98,7 @@ async function driveFetch(endpoint: string, options: RequestInit = {}): Promise<
 }
 
 /** Lists every file matching `q`, following nextPageToken until exhausted. */
-async function listAll<T = any>(q: string, fileFields: string): Promise<T[]> {
+async function listAll<T>(q: string, fileFields: string): Promise<T[]> {
   const items: T[] = [];
   let pageToken: string | undefined;
   do {
@@ -193,7 +193,7 @@ export function getOrCreateFolder(folderName: string, parentId?: string): Promis
     const existing = await findChildFolder(folderName, parentId);
     if (existing) return existing;
 
-    const createPayload: Record<string, any> = {
+    const createPayload: { name: string; mimeType: string; parents?: string[] } = {
       name: folderName,
       mimeType: FOLDER_MIME,
     };
@@ -706,7 +706,7 @@ export async function importVaultFromDrive(
             title: title,
             category: isSkillCategory
               ? 'skills'
-              : parsed.frontmatter.category || (currentFolder.split('/')[0] as any),
+              : parsed.frontmatter.category || (currentFolder.split('/')[0] as FileCategory),
           },
           createdAt: timestamp,
           updatedAt: timestamp,

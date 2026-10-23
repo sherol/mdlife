@@ -1,6 +1,9 @@
 export type FileCategory =
   'trailhead' | 'goals' | 'projects' | 'skills' | 'notes' | 'archive' | 'custom';
 
+/** A value as `parseFrontmatter` reads it: a scalar or a list of strings. */
+export type FrontmatterValue = string | number | boolean | string[] | undefined;
+
 export interface FileFrontmatter {
   title?: string;
   category?: FileCategory;
@@ -18,7 +21,7 @@ export interface FileFrontmatter {
   inputs?: string[];
   trigger?: string;
   version?: string;
-  [key: string]: any;
+  [key: string]: FrontmatterValue;
 }
 
 export interface VaultFile {

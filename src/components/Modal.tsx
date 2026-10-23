@@ -65,9 +65,11 @@ export const Modal: React.FC<ModalProps> = ({
 }) => {
   const panelRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
+  /* eslint-disable react-hooks/refs -- "latest value in a ref" pattern (intentional, see eslint.config.js) */
   onCloseRef.current = onClose;
   const closeOnEscapeRef = useRef(closeOnEscape);
   closeOnEscapeRef.current = closeOnEscape;
+  /* eslint-enable react-hooks/refs */
   const backdropPressRef = useRef(false);
 
   useEffect(() => {

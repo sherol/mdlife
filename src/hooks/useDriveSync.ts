@@ -42,6 +42,7 @@ import {
   savePendingDeletions,
   flushScheduledVaultSave,
 } from '../utils/storage';
+import { getErrorMessage } from '../utils/errors';
 
 const AUTOSAVE_DELAY_MS = 1200;
 /** How often an open shared note checks its Google Doc for the other person's edits. */
@@ -179,6 +180,7 @@ export function useDriveSync({
   const [sharedDocStatus, setSharedDocStatus] = useState<Record<string, SharedDocStatus>>({});
 
   const enabledRef = useRef(enabled);
+  /* eslint-disable react-hooks/refs -- "latest value in a ref" pattern (intentional, see eslint.config.js) */
   enabledRef.current = enabled;
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
@@ -186,6 +188,7 @@ export function useDriveSync({
   setDriveStatusRef.current = setDriveStatus;
   const setSelectedRef = useRef(setSelectedFileId);
   setSelectedRef.current = setSelectedFileId;
+  /* eslint-enable react-hooks/refs */
 
   // Auth status mirrored synchronously (the status listener fires inside googleSignIn/markTokenExpired).
   const authStatusRef = useRef<DriveConnectionStatus>('disconnected');
@@ -419,11 +422,11 @@ export function useDriveSync({
       }
       missingDocNotifiedRef.current.delete(id);
       setDocStatus(id, { syncing: false, syncedAt: Date.now(), error: undefined });
-    } catch (err: any) {
+    } catch (err) {
       setDocStatus(id, { syncing: false });
       if (err instanceof DriveAuthError) return 'auth';
       console.error(`Google Doc sync failed for ${file.name}:`, err);
-      setDocStatus(id, { error: err?.message || 'Could not sync with the Google Doc.' });
+      setDocStatus(id, { error: getErrorMessage(err) || 'Could not sync with the Google Doc.' });
     }
     return 'ok';
   };
@@ -636,14 +639,14 @@ export function useDriveSync({
           }
         }
         return true;
-      } catch (err: any) {
+      } catch (err) {
         console.error('Failed to load files from Google Drive:', err);
         if (err instanceof DriveAuthError) {
           setDriveStatusRef.current('expired');
         }
         notifyRef.current({
           type: 'error',
-          text: err?.message || 'Failed to load files from Google Drive',
+          text: getErrorMessage(err) || 'Failed to load files from Google Drive',
         });
         return false;
       } finally {

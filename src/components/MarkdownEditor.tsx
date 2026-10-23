@@ -821,7 +821,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             <select
               id="frontmatter-status-select"
               value={file.frontmatter.status || 'active'}
-              onChange={(e) => updateFrontmatterProperty({ status: e.target.value as any })}
+              onChange={(e) =>
+                updateFrontmatterProperty({
+                  status: e.target.value as FileFrontmatter['status'],
+                })
+              }
               className="w-full bg-white border border-stone-200 rounded px-2 py-1 text-stone-800 text-xs"
             >
               <option value="active">Active</option>
@@ -844,7 +848,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             <select
               id="frontmatter-priority-select"
               value={file.frontmatter.priority || 'medium'}
-              onChange={(e) => updateFrontmatterProperty({ priority: e.target.value as any })}
+              onChange={(e) =>
+                updateFrontmatterProperty({
+                  priority: e.target.value as FileFrontmatter['priority'],
+                })
+              }
               className="w-full bg-white border border-stone-200 rounded px-2 py-1 text-stone-800 text-xs"
             >
               <option value="high">High</option>

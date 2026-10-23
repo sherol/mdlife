@@ -25,6 +25,7 @@ import {
   toTimeInput,
   upsertRow,
 } from '../utils/sheetSync';
+import { getErrorMessage } from '../utils/errors';
 
 interface SheetSyncViewProps {
   spreadsheetId: string;
@@ -127,8 +128,8 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({
       setActiveTab((current) =>
         current && info.tabs.includes(current) ? current : ((known[0] ?? others[0])?.name ?? null),
       );
-    } catch (err: any) {
-      setError(err?.message || 'Could not open the spreadsheet.');
+    } catch (err) {
+      setError(getErrorMessage(err) || 'Could not open the spreadsheet.');
     } finally {
       setIsLoading(false);
     }
@@ -142,18 +143,22 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({
       const data = await readRows(spreadsheetId, activeTab);
       setHeaders(data.headers);
       setRows(data.rows);
-    } catch (err: any) {
-      setError(err?.message || `Could not read ${activeTab}.`);
+    } catch (err) {
+      setError(getErrorMessage(err) || `Could not read ${activeTab}.`);
     } finally {
       setIsLoading(false);
     }
   }, [spreadsheetId, activeTab]);
 
+  // Fetch when connected and whenever the spreadsheet or tab changes; the loaders set their
+  // loading/error state before awaiting the Sheets API.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-change
     if (isConnected) void loadSpreadsheet();
   }, [isConnected, loadSpreadsheet]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-change
     if (isConnected) void loadRows();
   }, [isConnected, loadRows]);
 
@@ -224,8 +229,8 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({
       setNotice(editing.rowNumber ? 'Entry updated in the sheet.' : 'Entry added to the sheet.');
       setEditing(null);
       await loadRows();
-    } catch (err: any) {
-      setFormError(err?.message || 'Could not save to the sheet.');
+    } catch (err) {
+      setFormError(getErrorMessage(err) || 'Could not save to the sheet.');
     } finally {
       setIsSaving(false);
     }

@@ -227,6 +227,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
 
     const topFolder = getTopLevelFolder(activeFile);
     if (topFolder) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- expand to follow the selection; no-op when already open
       setOpenFolders((prev) => (prev[topFolder] ? prev : { ...prev, [topFolder]: true }));
     }
 

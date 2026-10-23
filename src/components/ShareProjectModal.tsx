@@ -25,6 +25,7 @@ import {
   removeProjectPermission,
 } from '../utils/googleDrive';
 import { Modal } from './Modal';
+import { getErrorMessage } from '../utils/errors';
 
 type ShareRole = 'reader' | 'writer' | 'commenter';
 
@@ -91,9 +92,9 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
     try {
       const info = await getProjectFolderShareInfo(projectFolder);
       setShareInfo(info);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load Google Drive sharing info:', err);
-      setError(err?.message || 'Could not load Google Drive project permissions.');
+      setError(getErrorMessage(err) || 'Could not load Google Drive project permissions.');
     } finally {
       setIsLoading(false);
     }
@@ -124,6 +125,7 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
   // Load share permissions when modal opens
   useEffect(() => {
     if (!isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset-on-close (intentional, see eslint.config.js)
       setShareInfo(null);
       setError(null);
       setStatusMessage(null);
@@ -139,6 +141,9 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
     } else {
       setShareInfo(null);
     }
+    // Reload only when the modal opens or the folder/connection changes; the loaders are
+    // recreated every render, so listing them would refetch on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, projectFolder, isConnected, isMockMode]);
 
   const handleShare = async (e: React.FormEvent) => {
@@ -205,10 +210,10 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
       }
 
       setEmailInput('');
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error sharing project:', err);
       setError(
-        err?.message ||
+        getErrorMessage(err) ||
           'Failed to share project folder. Ensure the email is a registered Google account.',
       );
     } finally {
@@ -235,9 +240,9 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
         type: 'info',
         text: `Removed access for ${email || 'collaborator'}.`,
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error removing collaborator:', err);
-      setError(err?.message || 'Failed to remove collaborator.');
+      setError(getErrorMessage(err) || 'Failed to remove collaborator.');
     }
   };
 
@@ -271,9 +276,9 @@ export const ShareProjectModal: React.FC<ShareProjectModalProps> = ({
         type: 'success',
         text: `Updated role to ${roleLabel(newRole)}.`,
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error updating role:', err);
-      setError(err?.message || 'Failed to update role.');
+      setError(getErrorMessage(err) || 'Failed to update role.');
     }
   };
 

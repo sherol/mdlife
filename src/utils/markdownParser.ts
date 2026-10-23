@@ -91,7 +91,7 @@ export function parseFrontmatter(markdown: string): {
           .filter(Boolean);
         frontmatter[key] = items;
       } else {
-        let val: any = unquoteYamlScalar(rawVal);
+        let val: string | number | boolean = unquoteYamlScalar(rawVal);
         if (val === 'true') val = true;
         else if (val === 'false') val = false;
         else if (!isNaN(Number(val)) && val !== '') val = Number(val);

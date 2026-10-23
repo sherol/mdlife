@@ -13,6 +13,7 @@ import { getAccessToken, markTokenExpired } from './googleAuth';
 import { openDrivePicker, PickedDriveFile } from './googleDocs';
 import { storageKey } from './storageKeys';
 import { quoteYamlString } from './markdownParser';
+import type { FileFrontmatter } from '../types';
 
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 const SPREADSHEET_MIME = 'application/vnd.google-apps.spreadsheet';
@@ -80,7 +81,8 @@ function quoteTab(tab: string): string {
   return `'${tab.replace(/'/g, "''")}'`;
 }
 
-async function sheetsFetch(path: string, init: RequestInit = {}): Promise<any> {
+/** Calls the Sheets API; `T` is the shape of the JSON response the caller reads. */
+async function sheetsFetch<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
   const token = await getAccessToken();
   if (!token) throw new Error('Not connected to Google. Sign in to use the SheetSync spreadsheet.');
   const res = await fetch(`${SHEETS_API}/${path}`, {
@@ -108,19 +110,20 @@ async function sheetsFetch(path: string, init: RequestInit = {}): Promise<any> {
   if (!res.ok) {
     throw new Error(`Google Sheets error (${res.status}): ${await res.text()}`);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 /** Returns the spreadsheet title and its tab names. Also confirms mdlife can open it. */
 export async function getSpreadsheetInfo(
   spreadsheetId: string,
 ): Promise<{ title: string; tabs: string[] }> {
-  const data = await sheetsFetch(
-    `${spreadsheetId}?includeGridData=false&fields=properties.title,sheets.properties.title`,
-  );
+  const data = await sheetsFetch<{
+    properties?: { title?: string };
+    sheets?: { properties: { title: string } }[];
+  }>(`${spreadsheetId}?includeGridData=false&fields=properties.title,sheets.properties.title`);
   return {
     title: data.properties?.title || 'Untitled spreadsheet',
-    tabs: (data.sheets || []).map((s: any) => s.properties.title),
+    tabs: (data.sheets || []).map((s) => s.properties.title),
   };
 }
 
@@ -129,7 +132,9 @@ export async function readRows(
   spreadsheetId: string,
   tab: string,
 ): Promise<{ headers: string[]; rows: SheetSyncRow[] }> {
-  const data = await sheetsFetch(`${spreadsheetId}/values/${encodeURIComponent(quoteTab(tab))}`);
+  const data = await sheetsFetch<{ values?: string[][] }>(
+    `${spreadsheetId}/values/${encodeURIComponent(quoteTab(tab))}`,
+  );
   const [headers = [], ...body]: string[][] = data.values || [];
   const rows = body.map((cells, i) => ({
     rowNumber: i + 2,
@@ -186,17 +191,21 @@ export function parseLayout(rows: SheetSyncRow[]): SheetSyncLayout {
     if (key === CHANGED_KEY) layout.changedSinceBackup = value.trim().toUpperCase() !== 'FALSE';
     if (key !== LAYOUT_KEY) continue;
     try {
-      const parsed = JSON.parse(value);
+      const parsed: { categories?: unknown; lists?: unknown } = JSON.parse(value);
       if (Array.isArray(parsed.categories)) {
         layout.categories = parsed.categories.filter(
-          (c: any) => c?.sheetName && Array.isArray(c.fields),
+          (c: Partial<SheetSyncCategory> | null): c is SheetSyncCategory =>
+            Boolean(c?.sheetName && Array.isArray(c.fields)),
         );
       }
       if (Array.isArray(parsed.lists)) {
         layout.lists = Object.fromEntries(
           parsed.lists
-            .filter((l: any) => l?.id)
-            .map((l: any) => [l.id, Array.isArray(l.items) ? l.items : []]),
+            .filter(
+              (l: { id?: string; items?: unknown } | null): l is { id: string; items?: unknown } =>
+                Boolean(l?.id),
+            )
+            .map((l) => [l.id, Array.isArray(l.items) ? l.items : []]),
         );
       }
     } catch {
@@ -342,7 +351,7 @@ export async function upsertRow(
 }
 
 /** True for a note created by "Import SheetSync sheet": it shows the spreadsheet instead of markdown. */
-export function getSheetSyncNoteId(frontmatter: Record<string, any>): string | null {
+export function getSheetSyncNoteId(frontmatter: FileFrontmatter): string | null {
   const id = frontmatter.spreadsheet_id;
   return frontmatter.type === 'sheetsync' && id ? String(id) : null;
 }

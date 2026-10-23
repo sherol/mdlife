@@ -63,6 +63,7 @@ import {
 } from './utils/sheetSync';
 import { docSyncStore, getLinkedDocId } from './utils/sharedDocs';
 import { TRAILHEAD_ID, TRAILHEAD_LABEL, TRAILHEAD_NAME, isTrailheadFile } from './utils/trailhead';
+import { getErrorMessage } from './utils/errors';
 
 interface AppProps {
   forceOffline?: boolean;
@@ -238,6 +239,7 @@ export default function App({ forceOffline = false }: AppProps) {
   // One-time banner when opening in mock mode
   useEffect(() => {
     if (isMockMode) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time banner shown after mount
       setToastNotification({
         type: 'info',
         text: 'Explore Offline: Running in local mock mode with sample files.',
@@ -417,10 +419,10 @@ export default function App({ forceOffline = false }: AppProps) {
       } else {
         setToastNotification({ type: 'info', text: `Deleted "${target.name}".` });
       }
-    } catch (err: any) {
+    } catch (err) {
       setToastNotification({
         type: 'error',
-        text: `Error deleting file: ${err?.message}`,
+        text: `Error deleting file: ${getErrorMessage(err)}`,
       });
     } finally {
       setIsDeletingFile(false);
@@ -540,11 +542,11 @@ export default function App({ forceOffline = false }: AppProps) {
           type: 'success',
           text: `Renamed to "${cleanName}" in Google Drive!`,
         });
-      } catch (err: any) {
+      } catch (err) {
         console.error('Failed to rename file in Google Drive:', err);
         setToastNotification({
           type: 'error',
-          text: `Failed to rename in Google Drive: ${err?.message}`,
+          text: `Failed to rename in Google Drive: ${getErrorMessage(err)}`,
         });
         return false;
       }
@@ -690,11 +692,11 @@ export default function App({ forceOffline = false }: AppProps) {
         type: 'success',
         text: `Initialized ${starterFiles.length} starter files in your Google Drive!`,
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to initialize starter files in Drive:', err);
       setToastNotification({
         type: 'error',
-        text: `Error initializing Google Drive templates: ${err?.message}`,
+        text: `Error initializing Google Drive templates: ${getErrorMessage(err)}`,
       });
     } finally {
       setIsRefreshingDrive(false);
@@ -725,12 +727,12 @@ export default function App({ forceOffline = false }: AppProps) {
               text: `Backed up ${res.saved} files to ${res.path}/; ${res.failed.length} failed (${res.failed.slice(0, 3).join(', ')}${res.failed.length > 3 ? ', …' : ''}).`,
             },
       );
-    } catch (err: any) {
+    } catch (err) {
       console.error('Backup failed:', err);
       if (err instanceof DriveAuthError) setDriveStatus('expired');
       setToastNotification({
         type: 'error',
-        text: `Backup failed: ${err?.message || 'unknown error'}`,
+        text: `Backup failed: ${getErrorMessage(err) || 'unknown error'}`,
       });
     } finally {
       setBackupProgress(null);
@@ -812,10 +814,10 @@ export default function App({ forceOffline = false }: AppProps) {
             );
           }
           setToastNotification({ type: 'success', text: `Imported "${info.title}" into notes/.` });
-        } catch (err: any) {
+        } catch (err) {
           setToastNotification({
             type: 'error',
-            text: err?.message || 'Could not open that spreadsheet.',
+            text: getErrorMessage(err) || 'Could not open that spreadsheet.',
           });
         }
       },
@@ -848,9 +850,9 @@ export default function App({ forceOffline = false }: AppProps) {
         setIsStartingSignIn(false);
         fetchFilesFromDrive(false);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Sign-in error:', err);
-      setStartScreenError(err?.message || 'Failed to sign in with Google');
+      setStartScreenError(getErrorMessage(err) || 'Failed to sign in with Google');
       throw err;
     } finally {
       setIsStartingSignIn(false);
@@ -942,11 +944,11 @@ export default function App({ forceOffline = false }: AppProps) {
           });
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Reconnect failed:', err);
       setToastNotification({
         type: 'error',
-        text: `Reconnection failed: ${err?.message || 'Check popup permissions'}`,
+        text: `Reconnection failed: ${getErrorMessage(err) || 'Check popup permissions'}`,
       });
     } finally {
       setIsStartingSignIn(false);

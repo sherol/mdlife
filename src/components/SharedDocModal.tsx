@@ -17,6 +17,7 @@ import {
 } from '../utils/googleDrive';
 import { getLinkedDocId } from '../utils/sharedDocs';
 import type { SharedDocStatus } from '../hooks/useDriveSync';
+import { getErrorMessage } from '../utils/errors';
 
 const LAST_EMAIL_KEY = 'md_shared_doc_last_email';
 
@@ -105,8 +106,8 @@ export const SharedDocModal: React.FC<SharedDocModalProps> = ({
           ? `Google Doc created and shared with ${email.trim()} as an editor.`
           : 'Google Doc created. You can share it with someone below.',
       );
-    } catch (err: any) {
-      setError(err?.message || 'Could not create the Google Doc.');
+    } catch (err) {
+      setError(getErrorMessage(err) || 'Could not create the Google Doc.');
     } finally {
       setBusy(false);
     }
@@ -123,8 +124,8 @@ export const SharedDocModal: React.FC<SharedDocModalProps> = ({
       setMessage(
         `Shared with ${email.trim()} as an editor${notify ? ' (they were emailed a link)' : ''}.`,
       );
-    } catch (err: any) {
-      setError(err?.message || 'Could not share the Google Doc.');
+    } catch (err) {
+      setError(getErrorMessage(err) || 'Could not share the Google Doc.');
     } finally {
       setBusy(false);
     }

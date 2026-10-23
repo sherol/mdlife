@@ -41,7 +41,7 @@ function fakeSheets(initial: Record<string, string[][]>) {
     const body = init.body ? JSON.parse(String(init.body)) : null;
     const after = decodeURIComponent(url.split('/spreadsheets/sheet/')[1].split('?')[0]);
     if (after === 'values:batchUpdate') {
-      body.data.forEach((d: any) => {
+      body.data.forEach((d: { range: string; values: string[][] }) => {
         const { tab, row, col } = parse(d.range);
         write(tab, row, col, d.values[0]);
       });
@@ -118,7 +118,10 @@ describe('sheetSync', () => {
       ['people_2', '2026-10-23T12:00:00.000Z', 'Ben', '2026-10-23'],
     ]);
     const update = JSON.parse(String(fetchMock.mock.calls.at(-1)![1]!.body));
-    expect(update.data.map((d: any) => d.range)).toEqual(["'People'!B3:B3", "'People'!D3:D3"]);
+    expect(update.data.map((d: { range: string }) => d.range)).toEqual([
+      "'People'!B3:B3",
+      "'People'!D3:D3",
+    ]);
   });
 
   it('gives a hand-typed row without an ID one when it is edited', async () => {

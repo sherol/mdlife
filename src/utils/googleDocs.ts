@@ -5,12 +5,91 @@
  */
 
 import firebaseConfig from '../../firebase-applet-config.json';
+import { getErrorMessage } from './errors';
+
+/** The parts of the gapi loader and the Google Picker API this module uses. */
+interface GapiLoader {
+  load(name: 'picker', options: { callback: () => void; onerror: () => void }): void;
+}
+
+interface PickerDocument {
+  id: string;
+  name?: string;
+  url?: string;
+  mimeType?: string;
+}
+
+interface PickerResponse {
+  action: string;
+  docs?: PickerDocument[];
+}
+
+interface PickerDocsView {
+  setMimeTypes(mimeTypes: string): PickerDocsView;
+  setMode(mode: string): PickerDocsView;
+}
+
+interface PickerInstance {
+  setVisible(visible: boolean): void;
+}
+
+interface PickerBuilderInstance {
+  addView(view: PickerDocsView): PickerBuilderInstance;
+  setOAuthToken(token: string): PickerBuilderInstance;
+  setAppId(appId: string): PickerBuilderInstance;
+  setOrigin(origin: string): PickerBuilderInstance;
+  setTitle(title: string): PickerBuilderInstance;
+  setCallback(callback: (data: PickerResponse) => void): PickerBuilderInstance;
+  build(): PickerInstance;
+}
+
+interface GooglePickerNamespace {
+  picker: {
+    DocsView: new (viewId: string) => PickerDocsView;
+    PickerBuilder: new () => PickerBuilderInstance;
+    ViewId: { DOCS: string };
+    DocsViewMode: { LIST: string };
+    Action: { PICKED: string; CANCEL: string };
+  };
+}
 
 declare global {
   interface Window {
-    gapi?: any;
-    google?: any;
+    gapi?: GapiLoader;
+    google?: Partial<GooglePickerNamespace>;
   }
+}
+
+/** The parts of a Docs API v1 `Document` that the Markdown conversion reads. */
+interface DocsTextRun {
+  content?: string;
+  textStyle?: {
+    bold?: boolean;
+    italic?: boolean;
+    strikethrough?: boolean;
+    link?: { url?: string };
+    weightedFontFamily?: { fontFamily?: string };
+  };
+}
+
+interface DocsParagraph {
+  elements?: { textRun?: DocsTextRun }[];
+  paragraphStyle?: { namedStyleType?: string };
+  bullet?: { listId: string; nestingLevel?: number };
+}
+
+interface DocsStructuralElement {
+  paragraph?: DocsParagraph;
+  table?: { tableRows?: { tableCells?: { content?: DocsStructuralElement[] }[] }[] };
+}
+
+export interface GoogleDocsDocument {
+  title?: string;
+  body?: { content?: DocsStructuralElement[] };
+  lists?: Record<
+    string,
+    { listProperties?: { nestingLevels?: { glyphType?: string }[] } } | undefined
+  >;
 }
 
 export interface GoogleDocMetadata {
@@ -141,6 +220,7 @@ export async function openDrivePicker({
     if (!google?.picker) {
       throw new Error('Google Picker is not available');
     }
+    const pickerApi = google.picker;
 
     // Determine the safe origin for iframe embedding
     const pickerOrigin =
@@ -148,18 +228,18 @@ export async function openDrivePicker({
         ? window.location.ancestorOrigins[window.location.ancestorOrigins.length - 1]
         : window.location.origin;
 
-    const view = new google.picker.DocsView(google.picker.ViewId.DOCS);
+    const view = new pickerApi.DocsView(pickerApi.ViewId.DOCS);
     view.setMimeTypes(mimeType);
-    view.setMode(google.picker.DocsViewMode.LIST);
+    view.setMode(pickerApi.DocsViewMode.LIST);
 
-    const picker = new google.picker.PickerBuilder()
+    const picker = new pickerApi.PickerBuilder()
       .addView(view)
       .setOAuthToken(accessToken)
       .setAppId(firebaseConfig.messagingSenderId)
       .setOrigin(pickerOrigin)
       .setTitle(title)
-      .setCallback((data: any) => {
-        if (data.action === google.picker.Action.PICKED) {
+      .setCallback((data) => {
+        if (data.action === pickerApi.Action.PICKED) {
           const doc = data.docs?.[0];
           if (doc) {
             onPicked({
@@ -169,16 +249,17 @@ export async function openDrivePicker({
               mimeType: doc.mimeType,
             });
           }
-        } else if (data.action === google.picker.Action.CANCEL) {
+        } else if (data.action === pickerApi.Action.CANCEL) {
           if (onCancel) onCancel();
         }
       })
       .build();
 
     picker.setVisible(true);
-  } catch (err: any) {
+  } catch (err) {
     console.error('Failed to open Google Picker:', err);
-    if (onError) onError(err);
+    // Callers only read `message`; wrap non-Error values without changing it.
+    if (onError) onError(err instanceof Error ? err : new Error(getErrorMessage(err)));
     else throw err;
   }
 }
@@ -225,7 +306,7 @@ export async function fetchGoogleDocData(
     });
 
     if (res.ok) {
-      const docData = await res.json();
+      const docData: GoogleDocsDocument = await res.json();
       const title = docData.title || 'Untitled Document';
       const markdown = convertGoogleDocToMarkdown(docData);
       return { title, markdown };
@@ -285,7 +366,7 @@ export async function fetchGoogleDocData(
 /**
  * Converts Google Docs API v1 document JSON representation to clean Markdown.
  */
-export function convertGoogleDocToMarkdown(doc: any): string {
+export function convertGoogleDocToMarkdown(doc: GoogleDocsDocument): string {
   const content = doc?.body?.content;
   if (!Array.isArray(content) || content.length === 0) {
     return '';
@@ -382,13 +463,13 @@ export function convertGoogleDocToMarkdown(doc: any): string {
 
         for (const row of rows) {
           const cells = row.tableCells || [];
-          const cellTexts = cells.map((cell: any) => {
+          const cellTexts = cells.map((cell) => {
             const cellParas: string[] = [];
             if (Array.isArray(cell.content)) {
               for (const cellElem of cell.content) {
                 if (cellElem.paragraph?.elements) {
                   const txt = cellElem.paragraph.elements
-                    .map((e: any) => e.textRun?.content || '')
+                    .map((e) => e.textRun?.content || '')
                     .join('')
                     .replace(/\n+/g, ' ')
                     .trim();

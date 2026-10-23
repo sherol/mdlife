@@ -10,6 +10,7 @@ import {
 import firebaseConfig from '../../firebase-applet-config.json';
 import { DriveConnectionStatus } from '../types';
 import { isDriveSyncDisabled } from './storageKeys';
+import { getErrorMessage } from './errors';
 
 const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -191,16 +192,19 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     }
 
     // Firebase exposes the OAuth response's expires_in as `oauthExpireIn` on the raw token response.
-    const rawExpiresIn = Number((result as any)?._tokenResponse?.oauthExpireIn);
+    // It isn't part of UserCredential's public type, hence the narrow cast.
+    const tokenResponse = (result as { _tokenResponse?: { oauthExpireIn?: unknown } })
+      ._tokenResponse;
+    const rawExpiresIn = Number(tokenResponse?.oauthExpireIn);
     const expiresIn =
       Number.isFinite(rawExpiresIn) && rawExpiresIn > 0 ? rawExpiresIn : DEFAULT_EXPIRES_IN_SECS;
 
     setToken(credential.accessToken, expiresIn);
     notifyDriveStatus('connected', { email: result.user.email || undefined });
     return { user: result.user, accessToken: credential.accessToken };
-  } catch (error: any) {
+  } catch (error) {
     console.error('Google Sign-in error:', error);
-    notifyDriveStatus('disconnected', { error: error?.message || 'Sign-in failed' });
+    notifyDriveStatus('disconnected', { error: getErrorMessage(error) || 'Sign-in failed' });
     throw error;
   } finally {
     isSigningIn = false;
@@ -269,8 +273,8 @@ export const testDriveConnection = async (): Promise<{
     const email = data.user?.emailAddress;
     notifyDriveStatus('connected', { email });
     return { ok: true, email };
-  } catch (err: any) {
-    const errorMsg = err?.message || 'Network error reaching Google Drive';
+  } catch (err) {
+    const errorMsg = getErrorMessage(err) || 'Network error reaching Google Drive';
     notifyDriveStatus('disconnected', { error: errorMsg });
     return { ok: false, error: errorMsg };
   }

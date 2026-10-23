@@ -27,6 +27,7 @@ import {
   SheetSyncSpreadsheet,
 } from '../utils/sheetSync';
 import { Modal } from './Modal';
+import { getErrorMessage } from '../utils/errors';
 
 interface GoogleDriveSyncModalProps {
   isOpen: boolean;
@@ -90,10 +91,10 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
           text: res.error || 'Connection issue detected with Google Drive.',
         });
       }
-    } catch (err: any) {
+    } catch (err) {
       setStatusMessage({
         type: 'error',
-        text: err?.message || 'Failed to test Google Drive connection.',
+        text: getErrorMessage(err) || 'Failed to test Google Drive connection.',
       });
     } finally {
       setIsTestingConnection(false);
@@ -121,10 +122,10 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
             type: 'success',
             text: `mdlife can now read and edit "${info.title}".`,
           });
-        } catch (err: any) {
+        } catch (err) {
           setStatusMessage({
             type: 'error',
-            text: err?.message || 'Could not open that spreadsheet.',
+            text: getErrorMessage(err) || 'Could not open that spreadsheet.',
           });
         } finally {
           setIsPickingSheet(false);
@@ -145,10 +146,10 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
     try {
       const info = await getSpreadsheetInfo(sheetSyncSheet.id);
       setSheetSyncTabs(info.tabs);
-    } catch (err: any) {
+    } catch (err) {
       setStatusMessage({
         type: 'error',
-        text: err?.message || 'Could not open the SheetSync spreadsheet.',
+        text: getErrorMessage(err) || 'Could not open the SheetSync spreadsheet.',
       });
     } finally {
       setIsPickingSheet(false);
@@ -166,8 +167,11 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
       setIsSigningIn(true);
       setStatusMessage(null);
       await onSignInWithGoogle();
-    } catch (err: any) {
-      setStatusMessage({ type: 'error', text: err?.message || 'Failed to sign in with Google' });
+    } catch (err) {
+      setStatusMessage({
+        type: 'error',
+        text: getErrorMessage(err) || 'Failed to sign in with Google',
+      });
     } finally {
       setIsSigningIn(false);
     }
@@ -186,10 +190,10 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
         text: `Successfully synced to Google Drive: ${result.uploaded} new file(s) created, ${result.updated} file(s) updated in /Markdown Life Vault.`,
       });
       onSyncedAll?.();
-    } catch (err: any) {
+    } catch (err) {
       setStatusMessage({
         type: 'error',
-        text: err?.message || 'Failed to sync files to Google Drive',
+        text: getErrorMessage(err) || 'Failed to sync files to Google Drive',
       });
     } finally {
       setIsSyncing(false);
@@ -214,10 +218,10 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
           text: `Successfully imported ${imported.length} markdown file(s) from your Google Drive!`,
         });
       }
-    } catch (err: any) {
+    } catch (err) {
       setStatusMessage({
         type: 'error',
-        text: err?.message || 'Failed to import files from Google Drive',
+        text: getErrorMessage(err) || 'Failed to import files from Google Drive',
       });
     } finally {
       setIsImporting(false);

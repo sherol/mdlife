@@ -20,6 +20,7 @@ import {
   fetchGoogleDocData,
   GoogleDocMetadata,
 } from '../utils/googleDocs';
+import { getErrorMessage } from '../utils/errors';
 
 interface ImportGoogleDocModalProps {
   isOpen: boolean;
@@ -50,6 +51,7 @@ export const ImportGoogleDocModal: React.FC<ImportGoogleDocModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset-on-open (intentional, see eslint.config.js)
       setDocInput('');
       setSelectedDoc(null);
       setCustomTitle('');
@@ -95,10 +97,10 @@ export const ImportGoogleDocModal: React.FC<ImportGoogleDocModalProps> = ({
           );
         },
       });
-    } catch (err: any) {
+    } catch (err) {
       setIsOpeningPicker(false);
       setErrorMessage(
-        err.message ||
+        getErrorMessage(err) ||
           'Could not initialize Google Picker. You can paste your document URL directly into the field below.',
       );
     }
@@ -109,8 +111,8 @@ export const ImportGoogleDocModal: React.FC<ImportGoogleDocModalProps> = ({
     setErrorMessage(null);
     try {
       await onSignIn();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Google sign-in failed. Please try again.');
+    } catch (err) {
+      setErrorMessage(getErrorMessage(err) || 'Google sign-in failed. Please try again.');
     } finally {
       setIsSigningIn(false);
     }
@@ -183,10 +185,11 @@ export const ImportGoogleDocModal: React.FC<ImportGoogleDocModalProps> = ({
         onImportComplete(importedFile);
         onClose();
       }, 500);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Import error:', err);
       setErrorMessage(
-        err.message || 'Failed to import document. Ensure the Google Doc exists and is accessible.',
+        getErrorMessage(err) ||
+          'Failed to import document. Ensure the Google Doc exists and is accessible.',
       );
     } finally {
       setIsImporting(false);

@@ -30,6 +30,7 @@ export const SkillPlaygroundModal: React.FC<SkillPlaygroundModalProps> = ({ skil
   const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the inputs when another skill opens
     setInputValues({});
   }, [skill]);
 

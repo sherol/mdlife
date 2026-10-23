@@ -56,8 +56,8 @@ const getNodeText = (node: React.ReactNode): string => {
   if (node === null || node === undefined) return '';
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   if (Array.isArray(node)) return node.map(getNodeText).join('');
-  if (React.isValidElement(node) && (node.props as any)?.children) {
-    return getNodeText((node.props as any).children);
+  if (React.isValidElement<{ children?: React.ReactNode }>(node) && node.props?.children) {
+    return getNodeText(node.props.children);
   }
   return '';
 };
@@ -326,7 +326,7 @@ const markdownComponents: Components = {
   tr: ({ children, className }) => (
     <tr className={`hover:bg-stone-50/80 transition-colors ${className || ''}`}>{children}</tr>
   ),
-  th: ({ children, style, align, className }: any) => (
+  th: ({ children, style, align, className }) => (
     <th
       style={style}
       align={align}
@@ -337,7 +337,7 @@ const markdownComponents: Components = {
       {children}
     </th>
   ),
-  td: ({ children, style, align, className }: any) => (
+  td: ({ children, style, align, className }) => (
     <td
       style={style}
       align={align}
@@ -375,9 +375,11 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
 
   // Keep latest callbacks without invalidating the memoized markdown tree
   const navigateRef = useRef(onNavigateToFile);
+  /* eslint-disable react-hooks/refs -- "latest value in a ref" pattern (intentional, see eslint.config.js) */
   navigateRef.current = onNavigateToFile;
   const toggleRef = useRef(onToggleCheckbox);
   toggleRef.current = onToggleCheckbox;
+  /* eslint-enable react-hooks/refs */
   const stableNavigate = useCallback((target: string) => navigateRef.current(target), []);
   const stableToggle = useCallback((index: number) => toggleRef.current(index), []);
 
