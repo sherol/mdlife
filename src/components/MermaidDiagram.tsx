@@ -44,6 +44,9 @@ async function renderDiagram(
       startOnLoad: false,
       securityLevel: 'strict',
       theme: dark ? 'dark' : 'default',
+      // Mermaid 12 defaults to the `neo` look and ELK layout; keep the classic dagre drawings.
+      look: 'classic',
+      layout: 'dagre',
       fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
     });
     const { svg } = await mermaid.render(id, code);
