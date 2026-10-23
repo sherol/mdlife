@@ -20,6 +20,7 @@ import {
   Archive,
   Calendar,
   FolderPlus,
+  Sheet,
   Share2,
 } from 'lucide-react';
 import { VaultFile, FileCategory, TaskProgress } from '../types';
@@ -40,6 +41,8 @@ interface VaultSidebarProps {
   onQuickNewFileInFolder: (folder: string) => void;
   onDropFiles: (fileList: FileList) => void;
   onShareProject?: (projectFolder: string) => void;
+  /** Notes: pick the SheetSync spreadsheet and open it as a note. */
+  onImportSheetSync?: () => void;
 }
 
 // Top-level categories ordered strictly:
@@ -114,6 +117,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
   onQuickNewFileInFolder,
   onDropFiles,
   onShareProject,
+  onImportSheetSync,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<'all' | FileCategory>('all');
@@ -853,16 +857,30 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
           )
         }
         headerActions={
-          <button
-            type="button"
-            id={`quick-add-${folder}`}
-            onClick={() => onQuickNewFileInFolder(folder)}
-            title={`Add new ${folder} file`}
-            aria-label={`Add new ${folder} file`}
-            className="p-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-stone-200 rounded text-stone-500 hover:text-stone-800 cursor-pointer transition-opacity"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
+          <>
+            {folder === 'notes' && onImportSheetSync && (
+              <button
+                type="button"
+                id="import-sheetsync-notes"
+                onClick={onImportSheetSync}
+                title="Import SheetSync sheet to view and edit"
+                aria-label="Import SheetSync sheet"
+                className="p-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-emerald-100 rounded text-emerald-600 hover:text-emerald-800 cursor-pointer transition-opacity"
+              >
+                <Sheet className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              type="button"
+              id={`quick-add-${folder}`}
+              onClick={() => onQuickNewFileInFolder(folder)}
+              title={`Add new ${folder} file`}
+              aria-label={`Add new ${folder} file`}
+              className="p-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-stone-200 rounded text-stone-500 hover:text-stone-800 cursor-pointer transition-opacity"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </>
         }
         emptyText="Empty folder"
       />

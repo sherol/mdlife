@@ -9,6 +9,7 @@ import {
   FolderPlus,
   Calendar,
   Folder,
+  Sheet,
 } from 'lucide-react';
 import { FileCategory } from '../types';
 import { Modal } from './Modal';
@@ -26,6 +27,8 @@ interface NewFileModalProps {
   onClose: () => void;
   onCreateFile: (folder: string, filename: string, title: string) => void;
   onOpenImportGoogleDoc?: () => void;
+  /** Shown for Notes: pick the SheetSync spreadsheet and open it as a note. */
+  onImportSheetSync?: () => void;
 }
 
 export const NewFileModal: React.FC<NewFileModalProps> = ({
@@ -34,6 +37,7 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
   onClose,
   onCreateFile,
   onOpenImportGoogleDoc,
+  onImportSheetSync,
 }) => {
   // Determine initial state based on initialFolder
   const getInitialState = () => {
@@ -489,19 +493,35 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
 
           {/* Submit & Import Actions */}
           <div className="pt-3 border-t border-stone-200 flex items-center justify-between gap-2">
-            {onOpenImportGoogleDoc ? (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onOpenImportGoogleDoc();
-                }}
-                className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 inline-flex items-center gap-1.5 font-medium cursor-pointer"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>Import from Google Docs</span>
-              </button>
-            ) : <div />}
+            <div className="flex flex-col items-start gap-1.5">
+              {onOpenImportGoogleDoc && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenImportGoogleDoc();
+                  }}
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 inline-flex items-center gap-1.5 font-medium cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Import from Google Docs</span>
+                </button>
+              )}
+              {category === 'notes' && !isCustomFolder && onImportSheetSync && (
+                <button
+                  type="button"
+                  id="btn-new-file-import-sheetsync"
+                  onClick={() => {
+                    onClose();
+                    onImportSheetSync();
+                  }}
+                  className="text-xs text-emerald-600 hover:text-emerald-800 inline-flex items-center gap-1.5 font-medium cursor-pointer"
+                >
+                  <Sheet className="w-3.5 h-3.5" />
+                  <span>Import SheetSync sheet</span>
+                </button>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
