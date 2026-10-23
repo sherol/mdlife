@@ -14,7 +14,7 @@ import {
   getTemplateForCategory,
 } from './utils/storage';
 import { parseFrontmatter, toggleCheckboxInMarkdown, updateWikiLinks } from './utils/markdownParser';
-import { initAuth, googleSignIn, logout, subscribeDriveStatus, testDriveConnection } from './utils/googleAuth';
+import { initAuth, googleSignIn, logout, subscribeDriveStatus, testDriveConnection, getAccessToken } from './utils/googleAuth';
 import {
   renameFileInDrive,
   syncAllFilesToDrive,
@@ -41,6 +41,14 @@ import { DeleteFileModal } from './components/DeleteFileModal';
 import { SharedDocModal } from './components/SharedDocModal';
 import { DocConflictModal } from './components/DocConflictModal';
 import { ImportGoogleDocModal } from './components/ImportGoogleDocModal';
+import { SheetSyncView } from './components/SheetSyncView';
+import {
+  getSheetSyncNoteId,
+  getSpreadsheetInfo,
+  openSheetSyncPicker,
+  saveSpreadsheet,
+  sheetSyncNoteContent,
+} from './utils/sheetSync';
 import { docSyncStore, getLinkedDocId } from './utils/sharedDocs';
 import { TRAILHEAD_ID, TRAILHEAD_LABEL, isTrailheadFile } from './utils/trailhead';
 
@@ -62,6 +70,8 @@ export default function App({ forceOffline = false }: AppProps) {
   const [isNewFileModalOpen, setIsNewFileModalOpen] = useState(false);
   const [newFileInitialFolder, setNewFileInitialFolder] = useState<string>('goals');
   const [isImportGoogleDocModalOpen, setIsImportGoogleDocModalOpen] = useState(false);
+  // A SheetSync note whose markdown is shown instead of its spreadsheet view
+  const [sheetSourceFileId, setSheetSourceFileId] = useState<string | null>(null);
   const [skillForPlayground, setSkillForPlayground] = useState<VaultFile | null>(null);
   const [sharingProjectFolder, setSharingProjectFolder] = useState<string | null>(null);
   const [sharedDocFileId, setSharedDocFileId] = useState<string | null>(null);
@@ -696,6 +706,60 @@ export default function App({ forceOffline = false }: AppProps) {
     }
   };
 
+  // Import SheetSync sheet (Notes): pick the spreadsheet, then open (or create) a note that shows it.
+  // Picking it with the Google Picker is what grants mdlife access to that one spreadsheet.
+  const handleImportSheetSync = async () => {
+    const token = await getAccessToken();
+    if (!token) {
+      setToastNotification({ type: 'error', text: 'Connect Google first to import your SheetSync spreadsheet.' });
+      if (googleUser) handleReconnectDrive();
+      else setIsDriveModalOpen(true);
+      return;
+    }
+    await openSheetSyncPicker({
+      accessToken: token,
+      onPicked: async (picked) => {
+        try {
+          const info = await getSpreadsheetInfo(picked.id);
+          const sheet = { id: picked.id, name: info.title };
+          saveSpreadsheet(sheet);
+          setSheetSourceFileId(null);
+          const existing = filesRef.current.find((f) => getSheetSyncNoteId(f.frontmatter) === picked.id);
+          if (existing) {
+            setSelectedFileId(existing.id);
+            setActiveTab('editor');
+            return;
+          }
+          const slug = info.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'sheetsync';
+          let name = `${slug}.md`;
+          for (let n = 2; filesRef.current.some((f) => f.id === `notes/${name}`); n++) name = `${slug}-${n}.md`;
+          const content = sheetSyncNoteContent(sheet);
+          const newFile: VaultFile = {
+            id: `notes/${name}`,
+            name,
+            path: `notes/${name}`,
+            folder: 'notes',
+            content,
+            frontmatter: parseFrontmatter(content).frontmatter,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          updateFiles((prev) => [newFile, ...prev]);
+          markUnsaved([newFile.id]);
+          setSelectedFileId(newFile.id);
+          setActiveTab('editor');
+          if (isDriveEnabled) {
+            flushSaves([newFile.id]).then((summary) => notifySyncSummary(summary, 'Imported SheetSync sheet and saved'));
+          }
+          setToastNotification({ type: 'success', text: `Imported "${info.title}" into notes/.` });
+        } catch (err: any) {
+          setToastNotification({ type: 'error', text: err?.message || 'Could not open that spreadsheet.' });
+        }
+      },
+      onError: (err) => setToastNotification({ type: 'error', text: err?.message || 'Could not open Google Picker.' }),
+    });
+  };
+
   const handleOpenNewFileInFolder = (folder: string) => {
     setNewFileInitialFolder(folder);
     setIsNewFileModalOpen(true);
@@ -1006,6 +1070,7 @@ export default function App({ forceOffline = false }: AppProps) {
               onQuickNewFileInFolder={handleOpenNewFileInFolder}
               onDropFiles={handleImportFiles}
               onShareProject={(projectKey) => setSharingProjectFolder(projectKey)}
+              onImportSheetSync={isMockMode ? undefined : handleImportSheetSync}
             />
 
             {/* Markdown Editor / Loading / Empty State */}
@@ -1068,7 +1133,29 @@ export default function App({ forceOffline = false }: AppProps) {
                   )}
                 </div>
               </div>
+            ) : currentFile && getSheetSyncNoteId(currentFile.frontmatter) && sheetSourceFileId !== currentFile.id && !isMockMode ? (
+              <SheetSyncView
+                key={currentFile.id}
+                spreadsheetId={getSheetSyncNoteId(currentFile.frontmatter)!}
+                isConnected={!!googleUser && driveStatus === 'connected'}
+                onConnect={googleUser ? handleReconnectDrive : handleSignInWithGoogle}
+                onEditNote={() => setSheetSourceFileId(currentFile.id)}
+                onChooseAgain={handleImportSheetSync}
+              />
             ) : currentFile ? (
+              <div className="flex-1 flex flex-col min-w-0">
+              {getSheetSyncNoteId(currentFile.frontmatter) && !isMockMode && (
+                <div className="flex items-center justify-between gap-2 px-4 py-1.5 bg-emerald-50 border-b border-emerald-200 text-xs text-emerald-800">
+                  <span>This note opens a SheetSync spreadsheet. You're editing its markdown.</span>
+                  <button
+                    type="button"
+                    onClick={() => setSheetSourceFileId(null)}
+                    className="font-semibold underline cursor-pointer whitespace-nowrap"
+                  >
+                    Back to the sheet
+                  </button>
+                </div>
+              )}
               <MarkdownEditor
                 key={currentFile.id}
                 file={currentFile}
@@ -1101,6 +1188,7 @@ export default function App({ forceOffline = false }: AppProps) {
                 onOpenSharedDoc={() => setSharedDocFileId(currentFile.id)}
                 onResolveDocConflict={() => syncSharedDocNow(currentFile.id)}
               />
+              </div>
             ) : (
               <div className="flex-1 flex items-center justify-center bg-white text-stone-400">
                 Select a file from the vault sidebar
@@ -1143,6 +1231,7 @@ export default function App({ forceOffline = false }: AppProps) {
           onClose={() => setIsNewFileModalOpen(false)}
           onCreateFile={handleCreateFile}
           onOpenImportGoogleDoc={() => setIsImportGoogleDocModalOpen(true)}
+          onImportSheetSync={isMockMode ? undefined : handleImportSheetSync}
         />
       )}
 
