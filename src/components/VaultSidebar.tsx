@@ -857,7 +857,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
           )
         }
         headerActions={
-          <>
+          <div className="flex items-center gap-0.5">
             {folder === 'notes' && onImportSheetSync && (
               <button
                 type="button"
@@ -880,7 +880,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
             >
               <Plus className="w-3.5 h-3.5" />
             </button>
-          </>
+          </div>
         }
         emptyText="Empty folder"
       />
