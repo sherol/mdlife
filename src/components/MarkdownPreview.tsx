@@ -31,6 +31,7 @@ import {
   wikiTargetMatchesFile,
 } from '../utils/markdownParser';
 import { getTopLevelFolder, isSkillFile } from '../utils/fileKinds';
+import { MermaidDiagram } from './MermaidDiagram';
 
 interface MarkdownPreviewProps {
   file: VaultFile;
@@ -277,6 +278,9 @@ const markdownComponents: Components = {
   ),
   code: ({ children, className }) => {
     const isBlock = className && className.includes('language-');
+    if (isBlock && /\blanguage-mermaid\b/.test(className)) {
+      return <MermaidDiagram code={String(children).replace(/\n$/, '')} />;
+    }
     if (isBlock) {
       return (
         <div className="relative group my-3">
