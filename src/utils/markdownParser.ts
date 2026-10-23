@@ -1,6 +1,29 @@
 import { FileFrontmatter, TaskProgress } from '../types';
 
 /**
+ * Writes a string as a YAML double-quoted scalar, escaping backslashes and double quotes,
+ * so `parseFrontmatter` reads back exactly the same text.
+ */
+export function quoteYamlString(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * Reads a scalar written as `"double quoted"` (unescaping `\"` and `\\`; other backslashes are
+ * kept as-is), `'single quoted'` (unescaping `''`), or plain. Anything else falls back to
+ * trimming stray quote characters from the ends, as before.
+ */
+function unquoteYamlScalar(raw: string): string {
+  if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
+    return raw.slice(1, -1).replace(/\\(["\\])/g, '$1');
+  }
+  if (raw.length >= 2 && raw.startsWith("'") && raw.endsWith("'")) {
+    return raw.slice(1, -1).replace(/''/g, "'");
+  }
+  return raw.replace(/^["']|["']$/g, '');
+}
+
+/**
  * Parses frontmatter between --- and ---
  */
 export function parseFrontmatter(markdown: string): {
@@ -37,7 +60,7 @@ export function parseFrontmatter(markdown: string): {
 
     // Array item e.g. "  - item" or "- item"
     if (trimmed.startsWith('- ') && currentArrayKey) {
-      const val = trimmed.substring(2).trim().replace(/^["']|["']$/g, '');
+      const val = unquoteYamlScalar(trimmed.substring(2).trim());
       currentArray.push(val);
       continue;
     }
@@ -64,11 +87,11 @@ export function parseFrontmatter(markdown: string): {
         const items = rawVal
           .slice(1, -1)
           .split(',')
-          .map((s) => s.trim().replace(/^["']|["']$/g, ''))
+          .map((s) => unquoteYamlScalar(s.trim()))
           .filter(Boolean);
         frontmatter[key] = items;
       } else {
-        let val: any = rawVal.replace(/^["']|["']$/g, '');
+        let val: string | number | boolean = unquoteYamlScalar(rawVal);
         if (val === 'true') val = true;
         else if (val === 'false') val = false;
         else if (!isNaN(Number(val)) && val !== '') val = Number(val);
@@ -95,10 +118,7 @@ export function parseFrontmatter(markdown: string): {
 /**
  * Serializes frontmatter back into markdown
  */
-export function stringifyWithFrontmatter(
-  frontmatter: FileFrontmatter,
-  body: string
-): string {
+export function stringifyWithFrontmatter(frontmatter: FileFrontmatter, body: string): string {
   const yamlLines: string[] = [];
 
   for (const [key, value] of Object.entries(frontmatter)) {
@@ -110,13 +130,13 @@ export function stringifyWithFrontmatter(
       } else {
         yamlLines.push(`${key}:`);
         for (const item of value) {
-          yamlLines.push(`  - "${item}"`);
+          yamlLines.push(`  - ${quoteYamlString(String(item))}`);
         }
       }
     } else if (typeof value === 'string') {
       // Quote if contains special characters
-      if (value.includes(':') || value.includes('#') || value.includes('[') || value.includes(']')) {
-        yamlLines.push(`${key}: "${value.replace(/"/g, '\\"')}"`);
+      if (/[:#[\]"]/.test(value)) {
+        yamlLines.push(`${key}: ${quoteYamlString(value)}`);
       } else {
         yamlLines.push(`${key}: ${value}`);
       }
@@ -138,7 +158,10 @@ const FRONTMATTER_BLOCK_REGEX = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 /**
  * Splits markdown into its leading frontmatter block (verbatim, possibly empty) and the body.
  */
-export function splitFrontmatterBlock(markdown: string): { frontmatterBlock: string; body: string } {
+export function splitFrontmatterBlock(markdown: string): {
+  frontmatterBlock: string;
+  body: string;
+} {
   const match = markdown.match(FRONTMATTER_BLOCK_REGEX);
   const frontmatterBlock = match ? match[0] : '';
   return { frontmatterBlock, body: markdown.slice(frontmatterBlock.length) };
@@ -160,8 +183,14 @@ const FENCE_OPEN_REGEX = /^(?:\s*>)*\s*(`{3,}|~{3,})/;
  */
 function forEachTaskLine(
   body: string,
-  onTask: (info: { lineIndex: number; lineNumber: number; taskIndex: number; checked: boolean; match: RegExpMatchArray }) => void,
-  lines: string[] = body.split(/\r?\n/)
+  onTask: (info: {
+    lineIndex: number;
+    lineNumber: number;
+    taskIndex: number;
+    checked: boolean;
+    match: RegExpMatchArray;
+  }) => void,
+  lines: string[] = body.split(/\r?\n/),
 ): void {
   let fence: { char: string; length: number } | null = null;
   let taskIndex = 0;
@@ -256,7 +285,7 @@ export function toggleCheckboxInMarkdown(markdown: string, taskIndex: number): s
       parts[lineIndex * 2] = `${match[1]}${newState}${match[3]}`;
       changed = true;
     },
-    lines
+    lines,
   );
 
   return changed ? frontmatterBlock + parts.join('') : markdown;
@@ -286,7 +315,7 @@ export function extractWikiLinks(markdown: string): string[] {
  */
 export function wikiTargetMatchesFile(
   target: string,
-  file: { name: string; path: string; frontmatter: { title?: string } }
+  file: { name: string; path: string; frontmatter: { title?: string } },
 ): boolean {
   const t = target.trim().toLowerCase();
   if (!t) return false;
@@ -308,7 +337,7 @@ export function wikiTargetMatchesFile(
 export function updateWikiLinks(
   markdown: string,
   oldFileName: string,
-  newFileName: string
+  newFileName: string,
 ): string {
   const oldBase = oldFileName.replace(/\.md$/, '');
   const newBase = newFileName.replace(/\.md$/, '');

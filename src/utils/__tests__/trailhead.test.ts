@@ -8,7 +8,9 @@ import {
 import { getInitialVaultFiles } from '../../data/initialVault';
 import { VaultFile } from '../../types';
 
-const legacyReadme = (content = '---\ntitle: Trailhead\ncategory: trailhead\n---\n# My home\n'): VaultFile => ({
+const legacyReadme = (
+  content = '---\ntitle: Trailhead\ncategory: trailhead\n---\n# My home\n',
+): VaultFile => ({
   id: LEGACY_TRAILHEAD_ID,
   name: 'README.md',
   path: LEGACY_TRAILHEAD_ID,
@@ -36,16 +38,25 @@ describe('Trailhead (trailhead/start.md)', () => {
 
   it('never replaces an existing (edited) start.md, and keeps other notes in the folder', () => {
     const edited = { ...createTrailheadFile(), content: '# My own home page\n' };
-    const extra = { ...createTrailheadFile(), id: 'trailhead/packing-list.md', name: 'packing-list.md', path: 'trailhead/packing-list.md' };
+    const extra = {
+      ...createTrailheadFile(),
+      id: 'trailhead/packing-list.md',
+      name: 'packing-list.md',
+      path: 'trailhead/packing-list.md',
+    };
     const res = ensureTrailhead([edited, extra]);
     expect(res.startChanged).toBe(false);
     expect(res.files).toEqual([edited, extra]);
   });
 
-  it('moves the first version\'s README.md to start.md, keeping its content', () => {
+  it("moves the first version's README.md to start.md, keeping its content", () => {
     const res = ensureTrailhead([legacyReadme()]);
     expect(res.files).toHaveLength(1);
-    expect(res.files[0]).toMatchObject({ id: TRAILHEAD_ID, name: 'start.md', content: legacyReadme().content });
+    expect(res.files[0]).toMatchObject({
+      id: TRAILHEAD_ID,
+      name: 'start.md',
+      content: legacyReadme().content,
+    });
     expect(res.files[0].driveFileId).toBeUndefined();
     expect(res.startChanged).toBe(true);
     expect(res.removedLegacy?.driveFileId).toBe('drive-readme');

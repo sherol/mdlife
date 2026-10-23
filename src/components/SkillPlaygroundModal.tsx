@@ -12,10 +12,7 @@ interface SkillPlaygroundModalProps {
  * Lets the user fill in a skill's template parameters and copy the assembled prompt
  * to paste into the LLM of their choice. (No model is executed from inside the app.)
  */
-export const SkillPlaygroundModal: React.FC<SkillPlaygroundModalProps> = ({
-  skill,
-  onClose,
-}) => {
+export const SkillPlaygroundModal: React.FC<SkillPlaygroundModalProps> = ({ skill, onClose }) => {
   const { frontmatter, content } = skill;
   const role = frontmatter.role || 'Autonomous Assistant';
   const model = frontmatter.model;
@@ -24,7 +21,7 @@ export const SkillPlaygroundModal: React.FC<SkillPlaygroundModalProps> = ({
   // Extract input parameters from frontmatter or regex from content {{variable}}
   const frontmatterInputs = Array.isArray(frontmatter.inputs) ? frontmatter.inputs : [];
   const templateVarMatches = Array.from(content.matchAll(/\{\{([a-zA-Z0-9_-]+)\}\}/g)).map(
-    (m) => m[1]
+    (m) => m[1],
   );
   const detectedInputs = Array.from(new Set([...frontmatterInputs, ...templateVarMatches]));
 
@@ -33,6 +30,7 @@ export const SkillPlaygroundModal: React.FC<SkillPlaygroundModalProps> = ({
   const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the inputs when another skill opens
     setInputValues({});
   }, [skill]);
 
@@ -65,7 +63,11 @@ export const SkillPlaygroundModal: React.FC<SkillPlaygroundModalProps> = ({
 
   const copyButtonContent = (
     <>
-      {copiedPrompt ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+      {copiedPrompt ? (
+        <Check className="w-3.5 h-3.5 text-emerald-300" />
+      ) : (
+        <Copy className="w-3.5 h-3.5" />
+      )}
       {copiedPrompt ? 'Copied' : 'Copy prompt'}
     </>
   );
@@ -111,7 +113,10 @@ export const SkillPlaygroundModal: React.FC<SkillPlaygroundModalProps> = ({
       </div>
 
       {/* Navigation Tabs */}
-      <div role="tablist" className="flex items-center border-b border-stone-200 px-6 bg-stone-50/50 text-xs font-medium">
+      <div
+        role="tablist"
+        className="flex items-center border-b border-stone-200 px-6 bg-stone-50/50 text-xs font-medium"
+      >
         <button
           type="button"
           role="tab"
@@ -146,14 +151,15 @@ export const SkillPlaygroundModal: React.FC<SkillPlaygroundModalProps> = ({
         {activeTab === 'inputs' && (
           <div className="space-y-4">
             <p className="text-stone-600 text-xs">
-              Provide values for the skill's inputs. They are substituted into the prompt template defined in
-              the markdown spec; empty inputs are left as <code className="font-mono">{'{{placeholder}}'}</code>.
+              Provide values for the skill's inputs. They are substituted into the prompt template
+              defined in the markdown spec; empty inputs are left as{' '}
+              <code className="font-mono">{'{{placeholder}}'}</code>.
             </p>
 
             {detectedInputs.length === 0 ? (
               <div className="p-4 border border-stone-200 rounded-lg text-stone-500 italic bg-stone-50">
-                No parameterized inputs (e.g. <code className="font-mono">{'{{var}}'}</code>) detected in this skill.
-                The prompt consists of its static instructions.
+                No parameterized inputs (e.g. <code className="font-mono">{'{{var}}'}</code>)
+                detected in this skill. The prompt consists of its static instructions.
               </div>
             ) : (
               detectedInputs.map((inpKey) => {
@@ -195,7 +201,11 @@ export const SkillPlaygroundModal: React.FC<SkillPlaygroundModalProps> = ({
                 onClick={handleCopyResolvedPrompt}
                 className="inline-flex items-center gap-1 px-2.5 py-1 text-xs bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-md font-medium"
               >
-                {copiedPrompt ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                {copiedPrompt ? (
+                  <Check className="w-3 h-3 text-emerald-600" />
+                ) : (
+                  <Copy className="w-3 h-3" />
+                )}
                 {copiedPrompt ? 'Copied' : 'Copy Prompt'}
               </button>
             </div>

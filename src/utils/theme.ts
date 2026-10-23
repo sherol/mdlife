@@ -6,7 +6,8 @@
 export type ThemePref = 'system' | 'light' | 'dark';
 
 const THEME_KEY = 'md_theme';
-const media = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+const media =
+  typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
 export function getThemePref(): ThemePref {
   try {

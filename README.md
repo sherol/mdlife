@@ -16,9 +16,12 @@ Live: https://sherol.github.io/mdlife (offline demo without Google login: https:
   - Create, rename, and delete files directly within your Drive folder hierarchy.
   - Reload from Drive and initialize the starter templates on demand.
   - Share a project folder with another Google account.
-- **File management & renaming**:
-  - Rename `.md` files from the sidebar or the editor pane.
-  - `[[wiki-links]]` referencing a renamed file are updated across the vault.
+  - If a file changed in Drive since you last loaded it, your version is saved and Drive's version is kept next to it as `<name> (conflict).md`.
+  - Works offline: edits stay in the browser and sync when the connection (or Google session) is back. You can also skip sign-in and use local-only mode.
+- **Sidebar & file management**:
+  - Numbered top-level folders (**0. Trailhead**, **1. Goals**, **2. Projects**, **3. Agent Skills**, **4. Notes**, **5. Archive**), a folder filter, and search across names, tags and content.
+  - Add a project sub-folder or an archive year, create files in a folder, download a single file.
+  - Rename `.md` files from the sidebar or the editor pane; `[[wiki-links]]` referencing a renamed file are updated across the vault.
 - **Life Matrix**:
   - Connect **Goals** to **Projects**, **Agent Skills**, and **Notes** with YAML frontmatter and `[[wiki-links]]`.
   - Status chips, priority, target dates, and task-completion progress.
@@ -26,11 +29,15 @@ Live: https://sherol.github.io/mdlife (offline demo without Google login: https:
   - Markdown specs for LLM agent prompts with frontmatter parameters.
   - **Skill Playground** fills in `{{variables}}` and assembles the final prompt for you to copy into the LLM of your choice (it does not call a model itself).
 - **Markdown editor & preview**:
+  - Editor, split, or preview-only view, with a formatting toolbar (headings, bold/italic, lists, checklists, quotes, code blocks, tables, links).
+  - `[[wiki-links]]` with a file picker in the toolbar; links open the target note, and each note lists its **backlinks**.
+  - Type `@today` (or use the toolbar button) to insert today's date.
   - Interactive checklists (click a checkbox in the preview to update the source).
   - GitHub-flavored markdown (tables, task lists, strikethrough), code blocks, blockquotes, and a frontmatter badge viewer.
-  - Mermaid diagrams: a ```` ```mermaid ```` code block is drawn as a diagram in the preview (flowcharts, sequence diagrams, Gantt charts, mind maps, …), following light/dark mode. A diagram with a mistake shows its code and Mermaid's error. The Mermaid library loads only when a note with a diagram is opened.
+  - Mermaid diagrams: a ` ```mermaid ` code block is drawn as a diagram in the preview (flowcharts, sequence diagrams, Gantt charts, mind maps, …), following light/dark mode. A diagram with a mistake shows its code and Mermaid's error. The Mermaid library loads only when a note with a diagram is opened.
 - **Import / export**:
-  - Drag and drop local `.md` files into the sidebar to import them.
+  - Drag and drop local `.md` files into the sidebar (or use the import button) to import them.
+  - Import a Google Doc as a markdown note (pick it with the Google Picker or paste its URL).
   - Download the entire vault as a `.zip` file.
 - **0. Trailhead**: The first folder in the sidebar. Its `start.md` is the vault's home page: the app opens on it at every login and edits like any other note, it's created automatically when missing, and it can't be deleted or renamed. Edit it into your own map of the vault; other notes can live in the folder too.
 - **Edit together via Google Docs**: Share any note as a Google Doc (button "Edit in Google Docs" in the editor). You keep editing in mdlife; someone else edits the Google Doc. Changes sync both ways (on save, when the note is opened, and every 30 seconds while it's open); edits to different parts are merged automatically, and if you both change the same lines mdlife asks which to keep. The note's metadata stays in mdlife. Simple formatting (headings, bold/italic, lists, checklists, links, tables) round-trips; Docs-only formatting (colors, fonts, images) may be dropped when saving from mdlife.
@@ -43,17 +50,21 @@ Live: https://sherol.github.io/mdlife (offline demo without Google login: https:
 
 | Shortcut           | Action                       |
 | ------------------ | ---------------------------- |
-| `Ctrl+S` / `Cmd+S` | Save the current file        |
+| `Ctrl+S` / `Cmd+S` | Save unsaved edits to Drive  |
 | `Ctrl+K` / `Cmd+K` | Open the quick file switcher |
+| `Ctrl+B` / `Cmd+B` | Bold (in the editor)         |
+| `Ctrl+I` / `Cmd+I` | Italic (in the editor)       |
 
 ---
 
 ## Vault directory structure
 
-The starter vault (`src/data/initialVault.ts`) is organized like this, both in Google Drive and in ZIP exports:
+The starter vault (`src/data/initialVault.ts`) is organized like this, both in Google Drive and in ZIP exports. The sidebar shows the top-level folders with their numbered labels (`trailhead/` is **0. Trailhead**, `goals/` is **1. Goals**, and so on).
 
 ```text
 Markdown Life Vault/
+├── trailhead/
+│   └── start.md            (home page, created when missing)
 ├── goals/
 │   ├── ai-systems-mastery.md
 │   ├── endurance-vitality.md
@@ -72,9 +83,10 @@ Markdown Life Vault/
 │   └── prompt-evaluator.md
 ├── notes/
 │   └── weekly-review-protocol.md
-└── archive/
-    └── 2025/
-        └── 2025-annual-retrospective.md
+├── archive/
+│   └── 2025/
+│       └── 2025-annual-retrospective.md
+└── backup/                 (Drive only: snapshots from the Backup button, never loaded as notes)
 ```
 
 ### File format example
@@ -111,9 +123,10 @@ Parent Goal: [[ai-systems-mastery.md]]
 - **Framework**: React 19 + Vite 8
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS v4 (`@tailwindcss/vite`)
-- **Markdown rendering**: `react-markdown` + `remark-gfm` (frontmatter is parsed by a small built-in parser)
+- **Markdown rendering**: `react-markdown` + `remark-gfm` (frontmatter is parsed by a small built-in parser), Mermaid for diagrams (loaded on demand)
 - **Authentication**: Firebase Authentication (Google Sign-In)
-- **Cloud storage**: Google Drive REST API v3 (`https://www.googleapis.com/auth/drive.file`)
+- **Google APIs**: Drive REST API v3 (storage, sharing, backups), Docs API (Google Doc import), Sheets API v4 (SheetSync), Google Picker
+- **Merging**: `node-diff3` (three-way merge for notes edited in Google Docs)
 - **ZIP export**: JSZip
 - **Icons**: Lucide React
 - **Tooling**: ESLint (typescript-eslint, react-hooks), Prettier, Vitest
@@ -136,7 +149,11 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Open `/mock.html` to explore with sample files without signing in.
+Open [http://localhost:3000](http://localhost:3000). Open `/mock.html` to explore with sample files without signing in (mock mode keeps its data under separate `mock_` localStorage keys and never talks to Google).
+
+### Configuration
+
+`firebase-applet-config.json` holds the Firebase project and Google OAuth client the app signs in with; the Picker also uses its `messagingSenderId` as the Google Cloud app ID. To run against your own project, replace it with your Firebase web app config and enable the **Google Drive API**, **Google Docs API**, **Google Sheets API** and **Google Picker API** in that Google Cloud project.
 
 ### Scripts
 
@@ -175,9 +192,28 @@ To enable Google Sign-In on your published GitHub Pages URL (e.g. `https://<your
 
 ## Privacy & permissions
 
-- The app requests the minimal Google Drive scope: `https://www.googleapis.com/auth/drive.file`.
-- This scope restricts the app to **only the files it created** (inside `/Markdown Life Vault/`). It cannot access your other Drive files.
-- No vault contents are stored on any external server. All API calls go directly from your browser to Google APIs.
+- The app requests these Google scopes:
+  - `drive.file`: read and write **only the files the app created or that you picked** with the Google Picker (the vault, shared Google Docs, your SheetSync sheet). It cannot read or change your other Drive files.
+  - `drive.metadata.readonly`: file names and details (not contents).
+  - `documents.readonly`: read a Google Doc you import.
+- No vault contents are stored on any external server. All API calls go directly from your browser to Google APIs; the vault is also cached in your browser's `localStorage`.
+
+---
+
+## Project structure
+
+```text
+index.html, mock.html     App entry and offline demo entry (src/main.tsx, src/mock-main.tsx)
+firebase-applet-config.json
+src/
+├── App.tsx               App state, file operations, layout
+├── components/           Sidebar, header, editor, preview, Mermaid, views and modals
+├── hooks/                useDriveSync (serialized Drive save queue, Google Doc sync), useRefState
+├── data/initialVault.ts  Starter vault
+├── utils/                Drive/Docs/Sheets clients, auth, markdown parsing, storage, theme
+└── types.ts
+.github/workflows/        ci.yml (checks) and deploy.yml (GitHub Pages)
+```
 
 ---
 

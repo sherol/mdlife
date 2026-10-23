@@ -30,8 +30,8 @@ export function initFavicon(): void {
         sizes
           ? `link[rel="${rel}"][sizes="${sizes}"]`
           : type
-          ? `link[rel="${rel}"][type="${type}"]`
-          : `link[rel="${rel}"]`
+            ? `link[rel="${rel}"][type="${type}"]`
+            : `link[rel="${rel}"]`,
       );
       if (!el) {
         el = document.createElement('link');

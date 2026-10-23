@@ -6,10 +6,21 @@ vi.mock('../googleAuth', () => ({
   markTokenExpired: () => {},
 }));
 
-import { backupSnapshotName, backupVaultToDrive, importVaultFromDrive, resetDriveCaches } from '../googleDrive';
+import {
+  backupSnapshotName,
+  backupVaultToDrive,
+  importVaultFromDrive,
+  resetDriveCaches,
+} from '../googleDrive';
 
 // ---- Minimal in-memory Google Drive (just what these code paths use) ----
-interface Item { id: string; name: string; mimeType: string; parents: string[]; content?: string }
+interface Item {
+  id: string;
+  name: string;
+  mimeType: string;
+  parents: string[];
+  content?: string;
+}
 const FOLDER = 'application/vnd.google-apps.folder';
 let items: Item[] = [];
 let nextId = 1;
@@ -27,7 +38,7 @@ function fakeDrive(input: RequestInfo | URL, init: RequestInit = {}): Promise<Re
       (i) =>
         (!parent || i.parents.includes(parent)) &&
         (!folderOnly || i.mimeType === FOLDER) &&
-        (!noFolders || i.mimeType !== FOLDER)
+        (!noFolders || i.mimeType !== FOLDER),
     );
     return Promise.resolve(json({ files }));
   }
@@ -39,20 +50,32 @@ function fakeDrive(input: RequestInfo | URL, init: RequestInit = {}): Promise<Re
     const body = String(init.body);
     const meta = JSON.parse(body.match(/\r\n\r\n(\{.*?\})\r\n--/s)![1]);
     const content = body.split('\r\n\r\n')[2].replace(/\r\n--[^\r\n]*--$/, '');
-    const item = { id: `f${nextId++}`, name: meta.name, mimeType: meta.mimeType, parents: meta.parents, content };
+    const item = {
+      id: `f${nextId++}`,
+      name: meta.name,
+      mimeType: meta.mimeType,
+      parents: meta.parents,
+      content,
+    };
     items.push(item);
     return Promise.resolve(json({ id: item.id }));
   }
   if (method === 'POST' && url.pathname.endsWith('/drive/v3/files')) {
     const meta = JSON.parse(String(init.body));
-    const item = { id: `d${nextId++}`, name: meta.name, mimeType: meta.mimeType, parents: meta.parents || ['root'] };
+    const item = {
+      id: `d${nextId++}`,
+      name: meta.name,
+      mimeType: meta.mimeType,
+      parents: meta.parents || ['root'],
+    };
     items.push(item);
     return Promise.resolve(json({ id: item.id }));
   }
   return Promise.resolve(new Response('not handled', { status: 500 }));
 }
 
-const childNamed = (parentId: string, name: string) => items.find((i) => i.parents.includes(parentId) && i.name === name);
+const childNamed = (parentId: string, name: string) =>
+  items.find((i) => i.parents.includes(parentId) && i.name === name);
 const vaultFile = (path: string, content: string): VaultFile => ({
   id: path,
   path,
@@ -108,7 +131,13 @@ describe('backupVaultToDrive', () => {
     });
     const rootId = (await rootFolderRes.json()).id;
     items.push({ id: 'g', name: 'goals', mimeType: FOLDER, parents: [rootId] });
-    items.push({ id: 'g1', name: 'run.md', mimeType: 'text/markdown', parents: ['g'], content: '# Run\n' });
+    items.push({
+      id: 'g1',
+      name: 'run.md',
+      mimeType: 'text/markdown',
+      parents: ['g'],
+      content: '# Run\n',
+    });
 
     await backupVaultToDrive([vaultFile('goals/run.md', '# Run\n')]);
     vi.useFakeTimers({ toFake: ['Date'] });

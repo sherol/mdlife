@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { DocApi, DocSyncState, setLinkedDocId, syncNoteWithDoc, withNoteBody, getNoteBody } from '../sharedDocs';
+import {
+  DocApi,
+  DocSyncState,
+  setLinkedDocId,
+  syncNoteWithDoc,
+  withNoteBody,
+  getNoteBody,
+} from '../sharedDocs';
 
 /** In-memory Google Doc. Like Google's converter, it re-writes "- " bullets as "* ". */
 function fakeDoc(initial: string) {
@@ -35,7 +42,12 @@ function fakeDoc(initial: string) {
 const FRONT = '---\ntitle: Groceries\ngoogle_doc: doc1\n---\n';
 const note = (body: string) => FRONT + body;
 
-async function sync(doc: ReturnType<typeof fakeDoc>, content: string, state?: DocSyncState, unsaved = false) {
+async function sync(
+  doc: ReturnType<typeof fakeDoc>,
+  content: string,
+  state?: DocSyncState,
+  unsaved = false,
+) {
   const res = await syncNoteWithDoc('doc1', content, state, unsaved, doc.api);
   if (res.kind !== 'synced') throw new Error(`expected synced, got ${res.kind}`);
   return { res, content: res.body !== undefined ? withNoteBody(content, res.body) : content };
@@ -100,7 +112,9 @@ describe('syncNoteWithDoc', () => {
       exportMarkdown: async () => '',
       replaceContent: async () => ({ id: 'x', name: 'x', version: '1' }),
     };
-    expect((await syncNoteWithDoc('doc1', note('x\n'), undefined, false, api)).kind).toBe('missing');
+    expect((await syncNoteWithDoc('doc1', note('x\n'), undefined, false, api)).kind).toBe(
+      'missing',
+    );
   });
 });
 
@@ -109,7 +123,9 @@ describe('setLinkedDocId', () => {
     const base = '---\ntitle: A\ntags:\n  - x\n---\nBody\n';
     const linked = setLinkedDocId(base, 'abc');
     expect(linked).toBe('---\ntitle: A\ntags:\n  - x\ngoogle_doc: abc\n---\nBody\n');
-    expect(setLinkedDocId(linked, 'def')).toBe('---\ntitle: A\ntags:\n  - x\ngoogle_doc: def\n---\nBody\n');
+    expect(setLinkedDocId(linked, 'def')).toBe(
+      '---\ntitle: A\ntags:\n  - x\ngoogle_doc: def\n---\nBody\n',
+    );
     expect(setLinkedDocId(linked, null)).toBe(base);
   });
 

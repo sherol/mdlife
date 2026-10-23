@@ -10,6 +10,7 @@ import {
 import firebaseConfig from '../../firebase-applet-config.json';
 import { DriveConnectionStatus } from '../types';
 import { isDriveSyncDisabled } from './storageKeys';
+import { getErrorMessage } from './errors';
 
 const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -70,7 +71,9 @@ const scheduleExpiry = () => {
   if (ms <= 0) return;
   expiryTimer = setTimeout(() => {
     if (cachedAccessToken) {
-      markTokenExpired('Google Drive session expired. Reconnect to keep syncing — your edits are saved in this browser.');
+      markTokenExpired(
+        'Google Drive session expired. Reconnect to keep syncing — your edits are saved in this browser.',
+      );
     }
   }, ms);
 };
@@ -109,10 +112,16 @@ const loadSessionToken = () => {
 loadSessionToken();
 let currentConnectionStatus: DriveConnectionStatus = isTokenUsable() ? 'connected' : 'disconnected';
 
-type StatusListener = (status: DriveConnectionStatus, details?: { email?: string; error?: string }) => void;
+type StatusListener = (
+  status: DriveConnectionStatus,
+  details?: { email?: string; error?: string },
+) => void;
 const statusListeners = new Set<StatusListener>();
 
-const notifyDriveStatus = (status: DriveConnectionStatus, details?: { email?: string; error?: string }) => {
+const notifyDriveStatus = (
+  status: DriveConnectionStatus,
+  details?: { email?: string; error?: string },
+) => {
   currentConnectionStatus = status;
   statusListeners.forEach((fn) => {
     try {
@@ -142,7 +151,7 @@ export const markTokenExpired = (reason = 'Google Drive access token expired') =
 
 export const initAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
-  onAuthFailure?: () => void
+  onAuthFailure?: () => void,
 ) => {
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
@@ -154,7 +163,10 @@ export const initAuth = (
       } else if (!isSigningIn) {
         clearToken();
         // User is authenticated with Firebase but Drive token has expired or needs refreshing
-        notifyDriveStatus('expired', { email: user.email || undefined, error: 'Drive connection needs re-authentication' });
+        notifyDriveStatus('expired', {
+          email: user.email || undefined,
+          error: 'Drive connection needs re-authentication',
+        });
         // Preserve user object so app knows user identity and can prompt for 1-click reconnection
         if (onAuthSuccess) onAuthSuccess(user, '');
       }
@@ -180,15 +192,19 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     }
 
     // Firebase exposes the OAuth response's expires_in as `oauthExpireIn` on the raw token response.
-    const rawExpiresIn = Number((result as any)?._tokenResponse?.oauthExpireIn);
-    const expiresIn = Number.isFinite(rawExpiresIn) && rawExpiresIn > 0 ? rawExpiresIn : DEFAULT_EXPIRES_IN_SECS;
+    // It isn't part of UserCredential's public type, hence the narrow cast.
+    const tokenResponse = (result as { _tokenResponse?: { oauthExpireIn?: unknown } })
+      ._tokenResponse;
+    const rawExpiresIn = Number(tokenResponse?.oauthExpireIn);
+    const expiresIn =
+      Number.isFinite(rawExpiresIn) && rawExpiresIn > 0 ? rawExpiresIn : DEFAULT_EXPIRES_IN_SECS;
 
     setToken(credential.accessToken, expiresIn);
     notifyDriveStatus('connected', { email: result.user.email || undefined });
     return { user: result.user, accessToken: credential.accessToken };
-  } catch (error: any) {
+  } catch (error) {
     console.error('Google Sign-in error:', error);
-    notifyDriveStatus('disconnected', { error: error?.message || 'Sign-in failed' });
+    notifyDriveStatus('disconnected', { error: getErrorMessage(error) || 'Sign-in failed' });
     throw error;
   } finally {
     isSigningIn = false;
@@ -210,7 +226,12 @@ export const getAccessToken = async (): Promise<string | null> => {
  * Explicitly tests if Google Drive API is reachable with the current token.
  * Pings Google Drive's about endpoint.
  */
-export const testDriveConnection = async (): Promise<{ ok: boolean; expired?: boolean; email?: string; error?: string }> => {
+export const testDriveConnection = async (): Promise<{
+  ok: boolean;
+  expired?: boolean;
+  email?: string;
+  error?: string;
+}> => {
   const hadToken = !!cachedAccessToken;
   const token = await getAccessToken();
   if (!token) {
@@ -223,15 +244,22 @@ export const testDriveConnection = async (): Promise<{ ok: boolean; expired?: bo
 
   notifyDriveStatus('checking');
   try {
-    const res = await fetch('https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress)', {
-      headers: {
-        Authorization: `Bearer ${token}`,
+    const res = await fetch(
+      'https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress)',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       },
-    });
+    );
 
     if (res.status === 401) {
       markTokenExpired('Google Drive access token expired (401)');
-      return { ok: false, expired: true, error: 'Google Drive session expired (401). Please reconnect.' };
+      return {
+        ok: false,
+        expired: true,
+        error: 'Google Drive session expired (401). Please reconnect.',
+      };
     }
 
     if (!res.ok) {
@@ -245,8 +273,8 @@ export const testDriveConnection = async (): Promise<{ ok: boolean; expired?: bo
     const email = data.user?.emailAddress;
     notifyDriveStatus('connected', { email });
     return { ok: true, email };
-  } catch (err: any) {
-    const errorMsg = err?.message || 'Network error reaching Google Drive';
+  } catch (err) {
+    const errorMsg = getErrorMessage(err) || 'Network error reaching Google Drive';
     notifyDriveStatus('disconnected', { error: errorMsg });
     return { ok: false, error: errorMsg };
   }

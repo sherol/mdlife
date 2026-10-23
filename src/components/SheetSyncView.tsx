@@ -1,5 +1,16 @@
 import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
-import { AlertCircle, ExternalLink, FileCode, Loader2, Pencil, Plus, RefreshCw, Search, Sheet, X } from 'lucide-react';
+import {
+  AlertCircle,
+  ExternalLink,
+  FileCode,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Sheet,
+  X,
+} from 'lucide-react';
 import { Modal } from './Modal';
 import {
   SheetSyncCategory,
@@ -14,6 +25,7 @@ import {
   toTimeInput,
   upsertRow,
 } from '../utils/sheetSync';
+import { getErrorMessage } from '../utils/errors';
 
 interface SheetSyncViewProps {
   spreadsheetId: string;
@@ -62,10 +74,18 @@ function toInput(field: SheetSyncField | undefined, display: string): string {
 
 const formatSavedAt = (iso: string) => {
   const t = Date.parse(iso);
-  return Number.isFinite(t) ? new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : iso;
+  return Number.isFinite(t)
+    ? new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    : iso;
 };
 
-export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isConnected, onConnect, onEditNote, onChooseAgain }) => {
+export const SheetSyncView: React.FC<SheetSyncViewProps> = ({
+  spreadsheetId,
+  isConnected,
+  onConnect,
+  onEditNote,
+  onChooseAgain,
+}) => {
   const [title, setTitle] = useState('SheetSync');
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [layout, setLayout] = useState<SheetSyncLayout | null>(null);
@@ -85,7 +105,7 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
   const tab = tabs.find((t) => t.name === activeTab);
   const fieldFor = useCallback(
     (header: string) => tab?.category?.fields.find((f) => f.label === header),
-    [tab]
+    [tab],
   );
 
   // Load the spreadsheet's tabs and SheetSync's layout.
@@ -105,9 +125,11 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
       setLayout(nextLayout);
       setHasConfigTab(info.tabs.includes('App_Config'));
       setTabs([...known, ...others]);
-      setActiveTab((current) => (current && info.tabs.includes(current) ? current : (known[0] ?? others[0])?.name ?? null));
-    } catch (err: any) {
-      setError(err?.message || 'Could not open the spreadsheet.');
+      setActiveTab((current) =>
+        current && info.tabs.includes(current) ? current : ((known[0] ?? others[0])?.name ?? null),
+      );
+    } catch (err) {
+      setError(getErrorMessage(err) || 'Could not open the spreadsheet.');
     } finally {
       setIsLoading(false);
     }
@@ -121,18 +143,22 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
       const data = await readRows(spreadsheetId, activeTab);
       setHeaders(data.headers);
       setRows(data.rows);
-    } catch (err: any) {
-      setError(err?.message || `Could not read ${activeTab}.`);
+    } catch (err) {
+      setError(getErrorMessage(err) || `Could not read ${activeTab}.`);
     } finally {
       setIsLoading(false);
     }
   }, [spreadsheetId, activeTab]);
 
+  // Fetch when connected and whenever the spreadsheet or tab changes; the loaders set their
+  // loading/error state before awaiting the Sheets API.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-change
     if (isConnected) void loadSpreadsheet();
   }, [isConnected, loadSpreadsheet]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-change
     if (isConnected) void loadRows();
   }, [isConnected, loadRows]);
 
@@ -140,7 +166,8 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
   const columns = useMemo(() => headers.filter((h) => !META.has(h)), [headers]);
   const visibleRows = useMemo(() => {
     const dateLabel = tab?.category?.fields.find((f) => f.id === tab.category?.dateFieldId)?.label;
-    const sortKey = (r: SheetSyncRow) => `${toDateInput(dateLabel ? r.values[dateLabel] ?? '' : '')}|${r.values['Saved At'] ?? ''}`;
+    const sortKey = (r: SheetSyncRow) =>
+      `${toDateInput(dateLabel ? (r.values[dateLabel] ?? '') : '')}|${r.values['Saved At'] ?? ''}`;
     const q = query.trim().toLowerCase();
     return rows
       .filter((r) => (r.values.ID ?? '') !== '' || columns.some((c) => r.values[c]))
@@ -153,12 +180,18 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
     for (const h of columns) {
       const field = fieldFor(h);
       if (row) initial[h] = toInput(field, row.values[h] ?? '');
-      else if (field?.type === 'date' && field.id === tab?.category?.dateFieldId) initial[h] = today();
+      else if (field?.type === 'date' && field.id === tab?.category?.dateFieldId)
+        initial[h] = today();
       else if (field?.type === 'time') initial[h] = nowTime();
       else initial[h] = '';
     }
     setFormError(null);
-    setEditing({ id: row?.values.ID || undefined, rowNumber: row?.rowNumber, initial: row ? initial : {}, values: { ...initial } });
+    setEditing({
+      id: row?.values.ID || undefined,
+      rowNumber: row?.rowNumber,
+      initial: row ? initial : {},
+      values: { ...initial },
+    });
   };
 
   const handleSave = async () => {
@@ -170,7 +203,9 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
     }
     // Only cells that changed are written; a new entry writes everything filled in.
     const changes = Object.fromEntries(
-      columns.filter((h) => (editing.values[h] ?? '') !== (editing.initial[h] ?? '')).map((h) => [h, editing.values[h] ?? ''])
+      columns
+        .filter((h) => (editing.values[h] ?? '') !== (editing.initial[h] ?? ''))
+        .map((h) => [h, editing.values[h] ?? '']),
     );
     if (editing.rowNumber && Object.keys(changes).length === 0) {
       setEditing(null);
@@ -183,7 +218,9 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
         await markSheetChanged(spreadsheetId);
         setLayout({ ...layout, changedSinceBackup: true });
       }
-      const types = Object.fromEntries(columns.map((h) => [h, fieldFor(h)?.type ?? '']).filter(([, t]) => t));
+      const types = Object.fromEntries(
+        columns.map((h) => [h, fieldFor(h)?.type ?? '']).filter(([, t]) => t),
+      );
       await upsertRow(spreadsheetId, activeTab, changes, editing.id, {
         idPrefix: tab?.category?.id,
         types,
@@ -192,8 +229,8 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
       setNotice(editing.rowNumber ? 'Entry updated in the sheet.' : 'Entry added to the sheet.');
       setEditing(null);
       await loadRows();
-    } catch (err: any) {
-      setFormError(err?.message || 'Could not save to the sheet.');
+    } catch (err) {
+      setFormError(getErrorMessage(err) || 'Could not save to the sheet.');
     } finally {
       setIsSaving(false);
     }
@@ -218,7 +255,9 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
           </div>
           <div className="min-w-0">
             <h2 className="font-semibold text-sm text-stone-900 truncate">{title}</h2>
-            <p className="text-[11px] text-stone-500">SheetSync spreadsheet · edits are saved to Google Sheets</p>
+            <p className="text-[11px] text-stone-500">
+              SheetSync spreadsheet · edits are saved to Google Sheets
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-1.5 text-xs">
@@ -268,7 +307,10 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
       ) : (
         <>
           {/* Tabs */}
-          <div className="flex items-center gap-1 px-3 pt-2 border-b border-stone-200 overflow-x-auto no-scrollbar" role="tablist">
+          <div
+            className="flex items-center gap-1 px-3 pt-2 border-b border-stone-200 overflow-x-auto no-scrollbar"
+            role="tablist"
+          >
             {tabs.map((t) => {
               const selected = t.name === activeTab;
               return (
@@ -282,7 +324,9 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
                     setQuery('');
                   }}
                   className={`px-3 py-1.5 text-xs whitespace-nowrap rounded-t-md border-b-2 cursor-pointer ${
-                    selected ? 'font-semibold text-stone-900' : 'border-transparent text-stone-500 hover:text-stone-800'
+                    selected
+                      ? 'font-semibold text-stone-900'
+                      : 'border-transparent text-stone-500 hover:text-stone-800'
                   }`}
                   style={selected ? { borderColor: t.category?.color || '#1c1917' } : undefined}
                 >
@@ -323,13 +367,19 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
           {(error || notice) && (
             <div
               className={`mx-3 mt-2 p-2.5 rounded-lg border text-xs flex items-start gap-2 ${
-                error ? 'bg-red-50 border-red-200 text-red-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                error
+                  ? 'bg-red-50 border-red-200 text-red-800'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
               }`}
             >
               {error && <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}
               <span className="flex-1">{error || notice}</span>
               {error && /can't open this spreadsheet/.test(error) && (
-                <button type="button" onClick={onChooseAgain} className="font-semibold underline cursor-pointer whitespace-nowrap">
+                <button
+                  type="button"
+                  onClick={onChooseAgain}
+                  className="font-semibold underline cursor-pointer whitespace-nowrap"
+                >
                   Choose it again
                 </button>
               )}
@@ -345,14 +395,22 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
             ) : columns.length === 0 ? (
               <p className="py-12 text-center text-xs text-stone-500">This tab is empty.</p>
             ) : visibleRows.length === 0 ? (
-              <p className="py-12 text-center text-xs text-stone-500">{query ? 'No entries match.' : 'No entries yet.'}</p>
+              <p className="py-12 text-center text-xs text-stone-500">
+                {query ? 'No entries match.' : 'No entries yet.'}
+              </p>
             ) : (
               <table className="min-w-full text-xs border-separate border-spacing-0">
                 <thead>
                   <tr>
-                    <th className="sticky top-0 bg-white w-8 border-b border-stone-200" aria-label="Edit" />
+                    <th
+                      className="sticky top-0 bg-white w-8 border-b border-stone-200"
+                      aria-label="Edit"
+                    />
                     {columns.map((h) => (
-                      <th key={h} className="sticky top-0 bg-white text-left font-semibold text-stone-600 px-2 py-1.5 border-b border-stone-200 whitespace-nowrap">
+                      <th
+                        key={h}
+                        className="sticky top-0 bg-white text-left font-semibold text-stone-600 px-2 py-1.5 border-b border-stone-200 whitespace-nowrap"
+                      >
                         {h}
                       </th>
                     ))}
@@ -363,7 +421,11 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
                 </thead>
                 <tbody>
                   {visibleRows.map((r) => (
-                    <tr key={r.rowNumber} onClick={() => openEditor(r)} className="hover:bg-stone-50 cursor-pointer align-top">
+                    <tr
+                      key={r.rowNumber}
+                      onClick={() => openEditor(r)}
+                      className="hover:bg-stone-50 cursor-pointer align-top"
+                    >
                       <td className="px-1 py-1.5 border-b border-stone-100">
                         <button
                           type="button"
@@ -379,9 +441,14 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
                         </button>
                       </td>
                       {columns.map((h) => (
-                        <td key={h} className="px-2 py-1.5 border-b border-stone-100 text-stone-800 max-w-[16rem]">
+                        <td
+                          key={h}
+                          className="px-2 py-1.5 border-b border-stone-100 text-stone-800 max-w-[16rem]"
+                        >
                           <div className="line-clamp-3 whitespace-pre-wrap break-words">
-                            {fieldFor(h)?.type === 'date' ? toDateInput(r.values[h] ?? '') || r.values[h] : r.values[h]}
+                            {fieldFor(h)?.type === 'date'
+                              ? toDateInput(r.values[h] ?? '') || r.values[h]
+                              : r.values[h]}
                           </div>
                         </td>
                       ))}
@@ -396,8 +463,8 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
           </div>
 
           <p className="px-3 py-2 border-t border-stone-100 text-[11px] text-stone-400">
-            Changes go straight to the Google Sheet. The SheetSync app keeps its own copy of entries on each device, so it
-            won't show edits made here.
+            Changes go straight to the Google Sheet. The SheetSync app keeps its own copy of entries
+            on each device, so it won't show edits made here.
           </p>
         </>
       )}
@@ -438,7 +505,9 @@ export const SheetSyncView: React.FC<SheetSyncViewProps> = ({ spreadsheetId, isC
                   field={fieldFor(h)}
                   listItems={layout?.lists[fieldFor(h)?.listId ?? ''] ?? []}
                   value={editing.values[h] ?? ''}
-                  onChange={(v) => setEditing((s) => (s ? { ...s, values: { ...s.values, [h]: v } } : s))}
+                  onChange={(v) =>
+                    setEditing((s) => (s ? { ...s, values: { ...s.values, [h]: v } } : s))
+                  }
                 />
               ))}
               {formError && (
@@ -498,7 +567,9 @@ const FieldInput: React.FC<{
             aria-pressed={value === n}
             onClick={() => onChange(value === n ? '' : n)}
             className={`w-8 h-8 rounded-md border text-xs font-semibold cursor-pointer ${
-              value === n ? 'bg-stone-900 text-white border-stone-900' : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-100'
+              value === n
+                ? 'bg-stone-900 text-white border-stone-900'
+                : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-100'
             }`}
           >
             {n}

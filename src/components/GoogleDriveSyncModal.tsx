@@ -27,6 +27,7 @@ import {
   SheetSyncSpreadsheet,
 } from '../utils/sheetSync';
 import { Modal } from './Modal';
+import { getErrorMessage } from '../utils/errors';
 
 interface GoogleDriveSyncModalProps {
   isOpen: boolean;
@@ -54,10 +55,19 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
-  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; file: string } | null>(null);
-  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [syncProgress, setSyncProgress] = useState<{
+    current: number;
+    total: number;
+    file: string;
+  } | null>(null);
+  const [statusMessage, setStatusMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
   const [confirmSyncOpen, setConfirmSyncOpen] = useState(false);
-  const [sheetSyncSheet, setSheetSyncSheet] = useState<SheetSyncSpreadsheet | null>(getSavedSpreadsheet);
+  const [sheetSyncSheet, setSheetSyncSheet] = useState<SheetSyncSpreadsheet | null>(
+    getSavedSpreadsheet,
+  );
   const [sheetSyncTabs, setSheetSyncTabs] = useState<string[] | null>(null);
   const [isPickingSheet, setIsPickingSheet] = useState(false);
   const titleId = useId();
@@ -81,10 +91,10 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
           text: res.error || 'Connection issue detected with Google Drive.',
         });
       }
-    } catch (err: any) {
+    } catch (err) {
       setStatusMessage({
         type: 'error',
-        text: err?.message || 'Failed to test Google Drive connection.',
+        text: getErrorMessage(err) || 'Failed to test Google Drive connection.',
       });
     } finally {
       setIsTestingConnection(false);
@@ -108,9 +118,15 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
           saveSpreadsheet(sheet);
           setSheetSyncSheet(sheet);
           setSheetSyncTabs(info.tabs);
-          setStatusMessage({ type: 'success', text: `mdlife can now read and edit "${info.title}".` });
-        } catch (err: any) {
-          setStatusMessage({ type: 'error', text: err?.message || 'Could not open that spreadsheet.' });
+          setStatusMessage({
+            type: 'success',
+            text: `mdlife can now read and edit "${info.title}".`,
+          });
+        } catch (err) {
+          setStatusMessage({
+            type: 'error',
+            text: getErrorMessage(err) || 'Could not open that spreadsheet.',
+          });
         } finally {
           setIsPickingSheet(false);
         }
@@ -130,8 +146,11 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
     try {
       const info = await getSpreadsheetInfo(sheetSyncSheet.id);
       setSheetSyncTabs(info.tabs);
-    } catch (err: any) {
-      setStatusMessage({ type: 'error', text: err?.message || 'Could not open the SheetSync spreadsheet.' });
+    } catch (err) {
+      setStatusMessage({
+        type: 'error',
+        text: getErrorMessage(err) || 'Could not open the SheetSync spreadsheet.',
+      });
     } finally {
       setIsPickingSheet(false);
     }
@@ -148,8 +167,11 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
       setIsSigningIn(true);
       setStatusMessage(null);
       await onSignInWithGoogle();
-    } catch (err: any) {
-      setStatusMessage({ type: 'error', text: err?.message || 'Failed to sign in with Google' });
+    } catch (err) {
+      setStatusMessage({
+        type: 'error',
+        text: getErrorMessage(err) || 'Failed to sign in with Google',
+      });
     } finally {
       setIsSigningIn(false);
     }
@@ -168,8 +190,11 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
         text: `Successfully synced to Google Drive: ${result.uploaded} new file(s) created, ${result.updated} file(s) updated in /Markdown Life Vault.`,
       });
       onSyncedAll?.();
-    } catch (err: any) {
-      setStatusMessage({ type: 'error', text: err?.message || 'Failed to sync files to Google Drive' });
+    } catch (err) {
+      setStatusMessage({
+        type: 'error',
+        text: getErrorMessage(err) || 'Failed to sync files to Google Drive',
+      });
     } finally {
       setIsSyncing(false);
       setSyncProgress(null);
@@ -193,8 +218,11 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
           text: `Successfully imported ${imported.length} markdown file(s) from your Google Drive!`,
         });
       }
-    } catch (err: any) {
-      setStatusMessage({ type: 'error', text: err?.message || 'Failed to import files from Google Drive' });
+    } catch (err) {
+      setStatusMessage({
+        type: 'error',
+        text: getErrorMessage(err) || 'Failed to import files from Google Drive',
+      });
     } finally {
       setIsImporting(false);
     }
@@ -202,13 +230,13 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
 
   return (
     <>
-    <Modal
-      onClose={onClose}
-      labelledBy={titleId}
-      closeOnEscape={!confirmSyncOpen}
-      overlayClassName="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
-      className="rounded-2xl border shadow-2xl max-w-lg w-full overflow-hidden transition-colors bg-white border-stone-200 text-stone-900"
-    >
+      <Modal
+        onClose={onClose}
+        labelledBy={titleId}
+        closeOnEscape={!confirmSyncOpen}
+        overlayClassName="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+        className="rounded-2xl border shadow-2xl max-w-lg w-full overflow-hidden transition-colors bg-white border-stone-200 text-stone-900"
+      >
         {/* Header */}
         <div className="p-4 md:px-6 border-b flex items-center justify-between bg-stone-50 border-stone-200">
           <div className="flex items-center gap-3">
@@ -219,7 +247,9 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
               <h3 id={titleId} className="font-bold text-base text-stone-900">
                 Google Drive Storage & Sync
               </h3>
-              <p className="text-[11px] text-stone-400">Save and sync markdown files directly to your Drive</p>
+              <p className="text-[11px] text-stone-400">
+                Save and sync markdown files directly to your Drive
+              </p>
             </div>
           </div>
           <button
@@ -251,22 +281,27 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                 )}
                 <span className="leading-relaxed font-medium">{statusMessage.text}</span>
               </div>
-              {statusMessage.text.includes('unauthorized-domain') && typeof window !== 'undefined' && (
-                <div className="text-[11px] pt-1.5 border-t border-red-200 space-y-1">
-                  <div>
-                    Domain <code className="font-mono bg-red-100 px-1 py-0.5 rounded">{window.location.hostname}</code> must be authorized in Firebase.
+              {statusMessage.text.includes('unauthorized-domain') &&
+                typeof window !== 'undefined' && (
+                  <div className="text-[11px] pt-1.5 border-t border-red-200 space-y-1">
+                    <div>
+                      Domain{' '}
+                      <code className="font-mono bg-red-100 px-1 py-0.5 rounded">
+                        {window.location.hostname}
+                      </code>{' '}
+                      must be authorized in Firebase.
+                    </div>
+                    <a
+                      href="https://console.firebase.google.com/project/gen-lang-client-0609175245/authentication/settings"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-blue-600 hover:underline font-semibold"
+                    >
+                      Open Firebase Console Settings &rarr; Authorized Domains
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
                   </div>
-                  <a
-                    href="https://console.firebase.google.com/project/gen-lang-client-0609175245/authentication/settings"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-600 hover:underline font-semibold"
-                  >
-                    Open Firebase Console Settings &rarr; Authorized Domains
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              )}
+                )}
               {(statusMessage.text.toLowerCase().includes('401') ||
                 statusMessage.text.toLowerCase().includes('expired') ||
                 statusMessage.text.toLowerCase().includes('not authenticated') ||
@@ -292,7 +327,8 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
           {!user ? (
             <div className="text-center py-4 space-y-4">
               <div className="max-w-xs mx-auto text-stone-500">
-                Authorize with your Google account to grant permission to save and sync files in your Google Drive.
+                Authorize with your Google account to grant permission to save and sync files in
+                your Google Drive.
               </div>
 
               {/* Official Google Sign-in Button */}
@@ -308,10 +344,22 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                     <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
                   ) : (
                     <svg className="w-4 h-4" viewBox="0 0 48 48">
-                      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                      <path
+                        fill="#EA4335"
+                        d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+                      />
+                      <path
+                        fill="#4285F4"
+                        d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+                      />
                     </svg>
                   )}
                   <span>{isSigningIn ? 'Connecting to Google...' : 'Sign in with Google'}</span>
@@ -320,7 +368,8 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
 
               <p className="text-[11px] text-stone-400 max-w-sm mx-auto flex items-center justify-center gap-1">
                 <Lock className="w-3 h-3" />
-                Uses least-privilege permission: only accesses your vault files and documents you explicitly choose to import.
+                Uses least-privilege permission: only accesses your vault files and documents you
+                explicitly choose to import.
               </p>
             </div>
           ) : (
@@ -361,7 +410,9 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                     title="Verify Google Drive API connection and token validity"
                     className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors bg-white border-stone-200 hover:bg-stone-50 text-stone-700"
                   >
-                    <RefreshCw className={`w-3 h-3 ${isTestingConnection ? 'animate-spin text-blue-600' : 'text-stone-500'}`} />
+                    <RefreshCw
+                      className={`w-3 h-3 ${isTestingConnection ? 'animate-spin text-blue-600' : 'text-stone-500'}`}
+                    />
                     <span>{isTestingConnection ? 'Testing...' : 'Test Connection'}</span>
                   </button>
 
@@ -389,10 +440,14 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                 <div className="font-mono text-xs text-stone-700 bg-white/70 p-2 rounded border border-stone-200">
                   📁 Google Drive / <strong>Markdown Life Vault</strong>
                   <div className="text-[10px] text-stone-400 ml-4 mt-0.5">
-                    ├── 1. /goals/ (Goals)<br />
-                    ├── 2. /projects/ (Projects)<br />
-                    ├── 3. /skills/ (Agent Skills)<br />
-                    ├── 4. /notes/ (Notes)<br />
+                    ├── 1. /goals/ (Goals)
+                    <br />
+                    ├── 2. /projects/ (Projects)
+                    <br />
+                    ├── 3. /skills/ (Agent Skills)
+                    <br />
+                    ├── 4. /notes/ (Notes)
+                    <br />
                     └── 5. /archive/ (Archive)
                   </div>
                 </div>
@@ -420,13 +475,15 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                   <div className="text-stone-700">
                     <strong>{sheetSyncSheet.name}</strong>
                     {sheetSyncTabs && (
-                      <div className="text-[11px] text-stone-500 mt-0.5">Tabs: {sheetSyncTabs.join(', ')}</div>
+                      <div className="text-[11px] text-stone-500 mt-0.5">
+                        Tabs: {sheetSyncTabs.join(', ')}
+                      </div>
                     )}
                   </div>
                 ) : (
                   <div className="text-[11px] text-stone-500">
-                    Choose your SheetSync spreadsheet once to let mdlife read and edit it. mdlife gets access to that
-                    one spreadsheet only.
+                    Choose your SheetSync spreadsheet once to let mdlife read and edit it. mdlife
+                    gets access to that one spreadsheet only.
                   </div>
                 )}
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -437,7 +494,9 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                     disabled={isPickingSheet}
                     className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors bg-white border-stone-200 hover:bg-stone-50 text-stone-700 disabled:opacity-50"
                   >
-                    {isPickingSheet && <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />}
+                    {isPickingSheet && (
+                      <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />
+                    )}
                     {sheetSyncSheet ? 'Choose a different sheet' : 'Choose SheetSync sheet'}
                   </button>
                   {sheetSyncSheet && (
@@ -468,7 +527,9 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                 <div className="space-y-1 p-3 rounded-lg border border-blue-200 bg-blue-50/60">
                   <div className="flex justify-between text-[11px] text-blue-700 font-medium">
                     <span>Syncing file: {syncProgress.file}</span>
-                    <span>{syncProgress.current} / {syncProgress.total}</span>
+                    <span>
+                      {syncProgress.current} / {syncProgress.total}
+                    </span>
                   </div>
                   <div className="w-full h-1.5 bg-blue-200 rounded-full overflow-hidden">
                     <div
@@ -489,7 +550,11 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                   className="p-3 rounded-xl border text-left flex items-start gap-3 transition-all disabled:opacity-50 cursor-pointer bg-white border-stone-200 hover:border-blue-500 hover:bg-blue-50/20"
                 >
                   <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
-                    {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudUpload className="w-4 h-4" />}
+                    {isSyncing ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <CloudUpload className="w-4 h-4" />
+                    )}
                   </div>
                   <div>
                     <div className="font-semibold text-stone-900">Sync All to Google Drive</div>
@@ -507,7 +572,11 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                   className="p-3 rounded-xl border text-left flex items-start gap-3 transition-all disabled:opacity-50 cursor-pointer bg-white border-stone-200 hover:border-emerald-500 hover:bg-emerald-50/20"
                 >
                   <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                    {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" />}
+                    {isImporting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <CloudDownload className="w-4 h-4" />
+                    )}
                   </div>
                   <div>
                     <div className="font-semibold text-stone-900">Import from Google Drive</div>
@@ -535,7 +604,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
             Close
           </button>
         </div>
-    </Modal>
+      </Modal>
 
       {/* Explicit User Confirmation Dialog for Mutating Drive Data */}
       {confirmSyncOpen && (
@@ -545,43 +614,44 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
           overlayClassName="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-100"
           className="rounded-xl border shadow-xl max-w-md w-full p-5 space-y-4 bg-white border-stone-200 text-stone-900"
         >
-            <div className="flex items-center gap-2.5 text-amber-500">
-              <FolderSync className="w-5 h-5" />
-              <h4 id={confirmTitleId} className="font-bold text-sm text-stone-900">
-                Confirm Google Drive Synchronization
-              </h4>
-            </div>
+          <div className="flex items-center gap-2.5 text-amber-500">
+            <FolderSync className="w-5 h-5" />
+            <h4 id={confirmTitleId} className="font-bold text-sm text-stone-900">
+              Confirm Google Drive Synchronization
+            </h4>
+          </div>
 
-            <p className="text-xs text-stone-600 leading-relaxed">
-              Are you sure you want to sync <strong>{files.length} markdown file(s)</strong> to your Google Drive?
-              This will create or overwrite files in folder <strong>"Markdown Life Vault"</strong> on your Google account ({user?.email}).
-            </p>
+          <p className="text-xs text-stone-600 leading-relaxed">
+            Are you sure you want to sync <strong>{files.length} markdown file(s)</strong> to your
+            Google Drive? This will create or overwrite files in folder{' '}
+            <strong>"Markdown Life Vault"</strong> on your Google account ({user?.email}).
+          </p>
 
-            <div className="max-h-32 overflow-y-auto p-2 rounded bg-stone-100 border border-stone-200 text-[11px] font-mono space-y-0.5">
-              {files.map((f) => (
-                <div key={f.id} className="truncate text-stone-500">
-                  📁 {f.path}
-                </div>
-              ))}
-            </div>
+          <div className="max-h-32 overflow-y-auto p-2 rounded bg-stone-100 border border-stone-200 text-[11px] font-mono space-y-0.5">
+            {files.map((f) => (
+              <div key={f.id} className="truncate text-stone-500">
+                📁 {f.path}
+              </div>
+            ))}
+          </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setConfirmSyncOpen(false)}
-                className="px-3 py-1.5 rounded-lg border text-xs border-stone-200 text-stone-600 hover:bg-stone-100"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                id="btn-confirm-drive-sync"
-                onClick={handleExecuteSyncToDrive}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-xs"
-              >
-                Confirm & Sync Files
-              </button>
-            </div>
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setConfirmSyncOpen(false)}
+              className="px-3 py-1.5 rounded-lg border text-xs border-stone-200 text-stone-600 hover:bg-stone-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              id="btn-confirm-drive-sync"
+              onClick={handleExecuteSyncToDrive}
+              className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-xs"
+            >
+              Confirm & Sync Files
+            </button>
+          </div>
         </Modal>
       )}
     </>

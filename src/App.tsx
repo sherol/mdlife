@@ -13,8 +13,20 @@ import {
   saveBypassedAuth,
   getTemplateForCategory,
 } from './utils/storage';
-import { parseFrontmatter, toggleCheckboxInMarkdown, updateWikiLinks } from './utils/markdownParser';
-import { initAuth, googleSignIn, logout, subscribeDriveStatus, testDriveConnection, getAccessToken } from './utils/googleAuth';
+import {
+  parseFrontmatter,
+  toggleCheckboxInMarkdown,
+  updateWikiLinks,
+  wikiTargetMatchesFile,
+} from './utils/markdownParser';
+import {
+  initAuth,
+  googleSignIn,
+  logout,
+  subscribeDriveStatus,
+  testDriveConnection,
+  getAccessToken,
+} from './utils/googleAuth';
 import {
   renameFileInDrive,
   syncAllFilesToDrive,
@@ -50,7 +62,8 @@ import {
   sheetSyncNoteContent,
 } from './utils/sheetSync';
 import { docSyncStore, getLinkedDocId } from './utils/sharedDocs';
-import { TRAILHEAD_ID, TRAILHEAD_LABEL, isTrailheadFile } from './utils/trailhead';
+import { TRAILHEAD_ID, TRAILHEAD_LABEL, TRAILHEAD_NAME, isTrailheadFile } from './utils/trailhead';
+import { getErrorMessage } from './utils/errors';
 
 interface AppProps {
   forceOffline?: boolean;
@@ -84,7 +97,9 @@ export default function App({ forceOffline = false }: AppProps) {
   const [driveStatus, setDriveStatus] = useState<DriveConnectionStatus>('disconnected');
   const [unsavedFileIds, updateUnsaved, unsavedRef] = useRefState<Set<string>>(loadUnsavedFileIds);
   const [isReloadModalOpen, setIsReloadModalOpen] = useState(false);
-  const [hasBypassedAuth, setHasBypassedAuth] = useState<boolean>(() => isMockMode || loadBypassedAuth());
+  const [hasBypassedAuth, setHasBypassedAuth] = useState<boolean>(
+    () => isMockMode || loadBypassedAuth(),
+  );
   const [isStartingSignIn, setIsStartingSignIn] = useState(false);
   const [startScreenError, setStartScreenError] = useState<string | null>(null);
   const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
@@ -150,7 +165,9 @@ export default function App({ forceOffline = false }: AppProps) {
       if (status === 'expired') {
         setToastNotification({
           type: 'error',
-          text: details?.error || 'Google Drive session expired. Your recent edits are safely stored in your browser.',
+          text:
+            details?.error ||
+            'Google Drive session expired. Your recent edits are safely stored in your browser.',
         });
       }
     });
@@ -189,7 +206,7 @@ export default function App({ forceOffline = false }: AppProps) {
       () => {
         setGoogleUser(null);
         setDriveStatus('disconnected');
-      }
+      },
     );
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe();
@@ -201,9 +218,12 @@ export default function App({ forceOffline = false }: AppProps) {
     if (!googleUser || isMockMode) return;
 
     // Check connection every 3 minutes
-    const interval = setInterval(() => {
-      testDriveConnection();
-    }, 3 * 60 * 1000);
+    const interval = setInterval(
+      () => {
+        testDriveConnection();
+      },
+      3 * 60 * 1000,
+    );
 
     const onFocus = () => {
       testDriveConnection();
@@ -219,6 +239,7 @@ export default function App({ forceOffline = false }: AppProps) {
   // One-time banner when opening in mock mode
   useEffect(() => {
     if (isMockMode) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time banner shown after mount
       setToastNotification({
         type: 'info',
         text: 'Explore Offline: Running in local mock mode with sample files.',
@@ -243,7 +264,8 @@ export default function App({ forceOffline = false }: AppProps) {
   const notifySyncSummary = useCallback((summary: SyncSummary, prefix: string) => {
     if (summary.authFailed) return; // the sync queue already showed the "session expired" toast
     const parts = [`${prefix} ${summary.saved} file(s) to Google Drive`];
-    if (summary.conflicts > 0) parts.push(`${summary.conflicts} conflict(s) kept as "(conflict)" copies`);
+    if (summary.conflicts > 0)
+      parts.push(`${summary.conflicts} conflict(s) kept as "(conflict)" copies`);
     if (summary.failed > 0) parts.push(`${summary.failed} failed`);
     if (summary.skipped > 0) parts.push(`${summary.skipped} waiting for connection`);
     setToastNotification({
@@ -260,8 +282,8 @@ export default function App({ forceOffline = false }: AppProps) {
 
     updateFiles((prev) =>
       prev.map((f) =>
-        f.id === targetId ? { ...f, content: newContent, frontmatter, updatedAt: Date.now() } : f
-      )
+        f.id === targetId ? { ...f, content: newContent, frontmatter, updatedAt: Date.now() } : f,
+      ),
     );
     // Mark as having unsaved local changes pending Drive sync
     markUnsaved([targetId]);
@@ -276,13 +298,9 @@ export default function App({ forceOffline = false }: AppProps) {
 
   // Navigate to another file (e.g. from wiki-link or relation card)
   const handleNavigateToFile = (query: string) => {
-    const cleanQuery = query.replace(/^\[\[|\]\]$/g, '').trim().toLowerCase();
-    const found = files.find((f) => {
-      const matchName = f.name.toLowerCase() === cleanQuery || f.name.toLowerCase() === `${cleanQuery}.md`;
-      const matchPath = f.path.toLowerCase() === cleanQuery;
-      const matchTitle = f.frontmatter.title?.toLowerCase() === cleanQuery;
-      return matchName || matchPath || matchTitle;
-    });
+    // Same matching rule the preview uses to mark a [[wiki-link]] as resolved (name, path, with or without .md, or title)
+    const cleanQuery = query.replace(/^\[\[|\]\]$/g, '');
+    const found = files.find((f) => wikiTargetMatchesFile(cleanQuery, f));
 
     if (found) {
       setSelectedFileId(found.id);
@@ -296,14 +314,14 @@ export default function App({ forceOffline = false }: AppProps) {
       folder === 'goals' || folder.startsWith('goals/')
         ? 'goals'
         : folder === 'projects' || folder.startsWith('projects/')
-        ? 'projects'
-        : folder === 'skills' || folder.startsWith('skills/')
-        ? 'skills'
-        : folder === 'notes' || folder.startsWith('notes/')
-        ? 'notes'
-        : folder === 'archive' || folder.startsWith('archive/')
-        ? 'archive'
-        : 'custom';
+          ? 'projects'
+          : folder === 'skills' || folder.startsWith('skills/')
+            ? 'skills'
+            : folder === 'notes' || folder.startsWith('notes/')
+              ? 'notes'
+              : folder === 'archive' || folder.startsWith('archive/')
+                ? 'archive'
+                : 'custom';
 
     const content = getTemplateForCategory(category, title);
     const { frontmatter } = parseFrontmatter(content);
@@ -369,7 +387,9 @@ export default function App({ forceOffline = false }: AppProps) {
 
     try {
       // Remove locally first; the Drive deletion runs now or is queued (persisted) and retried on reconnect.
-      const nextFiles = filesRef.current.filter((f) => f.id !== target.id && f.path !== target.path);
+      const nextFiles = filesRef.current.filter(
+        (f) => f.id !== target.id && f.path !== target.path,
+      );
       updateFiles(() => nextFiles);
       updateUnsaved((prev) => {
         if (!prev.has(target.id)) return prev;
@@ -394,15 +414,15 @@ export default function App({ forceOffline = false }: AppProps) {
             : {
                 type: 'error',
                 text: `Deleted "${target.name}" locally. Google Drive is unavailable — it will be removed from Drive when you reconnect.`,
-              }
+              },
         );
       } else {
         setToastNotification({ type: 'info', text: `Deleted "${target.name}".` });
       }
-    } catch (err: any) {
+    } catch (err) {
       setToastNotification({
         type: 'error',
-        text: `Error deleting file: ${err?.message}`,
+        text: `Error deleting file: ${getErrorMessage(err)}`,
       });
     } finally {
       setIsDeletingFile(false);
@@ -451,7 +471,10 @@ export default function App({ forceOffline = false }: AppProps) {
     const fileToRename = filesRef.current.find((f) => f.id === id);
     if (!fileToRename) return false;
     if (isTrailheadFile(fileToRename)) {
-      setToastNotification({ type: 'info', text: `${TRAILHEAD_LABEL} always keeps its name (README.md).` });
+      setToastNotification({
+        type: 'info',
+        text: `${TRAILHEAD_LABEL} always keeps its name (${TRAILHEAD_NAME}).`,
+      });
       return false;
     }
 
@@ -472,7 +495,7 @@ export default function App({ forceOffline = false }: AppProps) {
       (f) =>
         f.folder === fileToRename.folder &&
         f.name.toLowerCase() === cleanName.toLowerCase() &&
-        f.id !== id
+        f.id !== id,
     );
     if (collision) {
       setToastNotification({
@@ -502,7 +525,7 @@ export default function App({ forceOffline = false }: AppProps) {
           fileToRename.folder,
           oldName,
           cleanName,
-          fileToRename.driveFileId
+          fileToRename.driveFileId,
         );
         if (result.renamed) {
           renamedFile = {
@@ -519,11 +542,11 @@ export default function App({ forceOffline = false }: AppProps) {
           type: 'success',
           text: `Renamed to "${cleanName}" in Google Drive!`,
         });
-      } catch (err: any) {
+      } catch (err) {
         console.error('Failed to rename file in Google Drive:', err);
         setToastNotification({
           type: 'error',
-          text: `Failed to rename in Google Drive: ${err?.message}`,
+          text: `Failed to rename in Google Drive: ${getErrorMessage(err)}`,
         });
         return false;
       }
@@ -569,7 +592,11 @@ export default function App({ forceOffline = false }: AppProps) {
 
     for (let i = 0; i < fileList.length; i++) {
       const item = fileList[i];
-      if (item.name.endsWith('.md') || item.name.endsWith('.markdown') || item.type.includes('markdown')) {
+      if (
+        item.name.endsWith('.md') ||
+        item.name.endsWith('.markdown') ||
+        item.type.includes('markdown')
+      ) {
         const text = await item.text();
         const { frontmatter } = parseFrontmatter(text);
         const folder = frontmatter.category || 'notes';
@@ -596,7 +623,11 @@ export default function App({ forceOffline = false }: AppProps) {
         // Re-importing over an existing file keeps its Drive binding so it updates in place
         const existing = prev.find((p) => p.id === f.id);
         return existing
-          ? { ...f, driveFileId: existing.driveFileId, driveModifiedTime: existing.driveModifiedTime }
+          ? {
+              ...f,
+              driveFileId: existing.driveFileId,
+              driveModifiedTime: existing.driveModifiedTime,
+            }
           : f;
       }),
       ...prev.filter((f) => !importedIds.has(f.id)),
@@ -606,23 +637,34 @@ export default function App({ forceOffline = false }: AppProps) {
     setActiveTab('editor');
 
     if (isDriveEnabled) {
-      flushSaves(imported.map((f) => f.id)).then((summary) => notifySyncSummary(summary, 'Imported and saved'));
+      flushSaves(imported.map((f) => f.id)).then((summary) =>
+        notifySyncSummary(summary, 'Imported and saved'),
+      );
     }
   };
 
   // Import a Google Doc converted to Markdown
-  const handleGoogleDocImported = (importedFile: VaultFile) => {
-    updateFiles((prev) => [
-      importedFile,
-      ...prev.filter((f) => f.id !== importedFile.id),
-    ]);
+  const handleGoogleDocImported = (doc: VaultFile) => {
+    // Never replace an existing note: a clashing name gets -1, -2, ... instead.
+    const base = doc.name.replace(/\.md$/, '');
+    let name = doc.name;
+    for (let n = 1; filesRef.current.some((f) => f.id === `${doc.folder}/${name}`); n++)
+      name = `${base}-${n}.md`;
+    const importedFile: VaultFile = {
+      ...doc,
+      id: `${doc.folder}/${name}`,
+      name,
+      path: `${doc.folder}/${name}`,
+    };
+
+    updateFiles((prev) => [importedFile, ...prev.filter((f) => f.id !== importedFile.id)]);
     markUnsaved([importedFile.id]);
     setSelectedFileId(importedFile.id);
     setActiveTab('editor');
 
     if (isDriveEnabled) {
       flushSaves([importedFile.id]).then((summary) =>
-        notifySyncSummary(summary, 'Imported from Google Docs and saved')
+        notifySyncSummary(summary, 'Imported from Google Docs and saved'),
       );
     }
 
@@ -635,7 +677,7 @@ export default function App({ forceOffline = false }: AppProps) {
   // Initialize Starter Templates in Google Drive (always the bundled starter set, never the current cache)
   const handleInitializeDriveTemplates = async () => {
     const ok = window.confirm(
-      'This will upload the standard Markdown Life Vault starter files (Goals, Projects, Skills, Notes) into your Google Drive (/Markdown Life Vault/). Proceed?'
+      'This will upload the standard Markdown Life Vault starter files (Goals, Projects, Skills, Notes) into your Google Drive (/Markdown Life Vault/). Proceed?',
     );
     if (!ok) return;
 
@@ -650,11 +692,11 @@ export default function App({ forceOffline = false }: AppProps) {
         type: 'success',
         text: `Initialized ${starterFiles.length} starter files in your Google Drive!`,
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to initialize starter files in Drive:', err);
       setToastNotification({
         type: 'error',
-        text: `Error initializing Google Drive templates: ${err?.message}`,
+        text: `Error initializing Google Drive templates: ${getErrorMessage(err)}`,
       });
     } finally {
       setIsRefreshingDrive(false);
@@ -671,19 +713,27 @@ export default function App({ forceOffline = false }: AppProps) {
     const snapshot = filesRef.current;
     setBackupProgress(`0/${snapshot.length}`);
     try {
-      const res = await backupVaultToDrive(snapshot, (done, total) => setBackupProgress(`${done}/${total}`));
+      const res = await backupVaultToDrive(snapshot, (done, total) =>
+        setBackupProgress(`${done}/${total}`),
+      );
       setToastNotification(
         res.failed.length === 0
-          ? { type: 'success', text: `Backed up ${res.saved} files to ${res.path}/ in Google Drive.` }
+          ? {
+              type: 'success',
+              text: `Backed up ${res.saved} files to ${res.path}/ in Google Drive.`,
+            }
           : {
               type: 'error',
               text: `Backed up ${res.saved} files to ${res.path}/; ${res.failed.length} failed (${res.failed.slice(0, 3).join(', ')}${res.failed.length > 3 ? ', …' : ''}).`,
-            }
+            },
       );
-    } catch (err: any) {
+    } catch (err) {
       console.error('Backup failed:', err);
       if (err instanceof DriveAuthError) setDriveStatus('expired');
-      setToastNotification({ type: 'error', text: `Backup failed: ${err?.message || 'unknown error'}` });
+      setToastNotification({
+        type: 'error',
+        text: `Backup failed: ${getErrorMessage(err) || 'unknown error'}`,
+      });
     } finally {
       setBackupProgress(null);
     }
@@ -695,7 +745,7 @@ export default function App({ forceOffline = false }: AppProps) {
       handleInitializeDriveTemplates();
     } else {
       const ok = window.confirm(
-        'Reset vault to initial template files? Any unsaved edits will be overwritten.'
+        'Reset vault to initial template files? Any unsaved edits will be overwritten.',
       );
       if (!ok) return;
       clearVaultCache();
@@ -711,7 +761,10 @@ export default function App({ forceOffline = false }: AppProps) {
   const handleImportSheetSync = async () => {
     const token = await getAccessToken();
     if (!token) {
-      setToastNotification({ type: 'error', text: 'Connect Google first to import your SheetSync spreadsheet.' });
+      setToastNotification({
+        type: 'error',
+        text: 'Connect Google first to import your SheetSync spreadsheet.',
+      });
       if (googleUser) handleReconnectDrive();
       else setIsDriveModalOpen(true);
       return;
@@ -724,15 +777,22 @@ export default function App({ forceOffline = false }: AppProps) {
           const sheet = { id: picked.id, name: info.title };
           saveSpreadsheet(sheet);
           setSheetSourceFileId(null);
-          const existing = filesRef.current.find((f) => getSheetSyncNoteId(f.frontmatter) === picked.id);
+          const existing = filesRef.current.find(
+            (f) => getSheetSyncNoteId(f.frontmatter) === picked.id,
+          );
           if (existing) {
             setSelectedFileId(existing.id);
             setActiveTab('editor');
             return;
           }
-          const slug = info.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'sheetsync';
+          const slug =
+            info.title
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-|-$/g, '') || 'sheetsync';
           let name = `${slug}.md`;
-          for (let n = 2; filesRef.current.some((f) => f.id === `notes/${name}`); n++) name = `${slug}-${n}.md`;
+          for (let n = 2; filesRef.current.some((f) => f.id === `notes/${name}`); n++)
+            name = `${slug}-${n}.md`;
           const content = sheetSyncNoteContent(sheet);
           const newFile: VaultFile = {
             id: `notes/${name}`,
@@ -749,14 +809,23 @@ export default function App({ forceOffline = false }: AppProps) {
           setSelectedFileId(newFile.id);
           setActiveTab('editor');
           if (isDriveEnabled) {
-            flushSaves([newFile.id]).then((summary) => notifySyncSummary(summary, 'Imported SheetSync sheet and saved'));
+            flushSaves([newFile.id]).then((summary) =>
+              notifySyncSummary(summary, 'Imported SheetSync sheet and saved'),
+            );
           }
           setToastNotification({ type: 'success', text: `Imported "${info.title}" into notes/.` });
-        } catch (err: any) {
-          setToastNotification({ type: 'error', text: err?.message || 'Could not open that spreadsheet.' });
+        } catch (err) {
+          setToastNotification({
+            type: 'error',
+            text: getErrorMessage(err) || 'Could not open that spreadsheet.',
+          });
         }
       },
-      onError: (err) => setToastNotification({ type: 'error', text: err?.message || 'Could not open Google Picker.' }),
+      onError: (err) =>
+        setToastNotification({
+          type: 'error',
+          text: err?.message || 'Could not open Google Picker.',
+        }),
     });
   };
 
@@ -781,15 +850,14 @@ export default function App({ forceOffline = false }: AppProps) {
         setIsStartingSignIn(false);
         fetchFilesFromDrive(false);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Sign-in error:', err);
-      setStartScreenError(err?.message || 'Failed to sign in with Google');
+      setStartScreenError(getErrorMessage(err) || 'Failed to sign in with Google');
       throw err;
     } finally {
       setIsStartingSignIn(false);
     }
   };
-
 
   const handleSignOutGoogle = async () => {
     await logout(); // also clears the in-memory/session token
@@ -876,11 +944,11 @@ export default function App({ forceOffline = false }: AppProps) {
           });
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Reconnect failed:', err);
       setToastNotification({
         type: 'error',
-        text: `Reconnection failed: ${err?.message || 'Check popup permissions'}`,
+        text: `Reconnection failed: ${getErrorMessage(err) || 'Check popup permissions'}`,
       });
     } finally {
       setIsStartingSignIn(false);
@@ -1038,8 +1106,8 @@ export default function App({ forceOffline = false }: AppProps) {
               toastNotification.type === 'success'
                 ? 'bg-emerald-900 text-emerald-100 border-emerald-700'
                 : toastNotification.type === 'error'
-                ? 'bg-red-900 text-red-100 border-red-700'
-                : 'bg-stone-900 text-stone-100 border-stone-700'
+                  ? 'bg-red-900 text-red-100 border-red-700'
+                  : 'bg-stone-900 text-stone-100 border-stone-700'
             }`}
           >
             <span>{toastNotification.text}</span>
@@ -1077,8 +1145,12 @@ export default function App({ forceOffline = false }: AppProps) {
             {isLoadingDriveFiles ? (
               <div className="flex-1 flex flex-col items-center justify-center bg-white text-center p-8">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-3" />
-                <h3 className="text-base font-semibold text-stone-800">Reading Google Drive Vault...</h3>
-                <p className="text-xs text-stone-500 mt-1">Scanning folder: /Markdown Life Vault/</p>
+                <h3 className="text-base font-semibold text-stone-800">
+                  Reading Google Drive Vault...
+                </h3>
+                <p className="text-xs text-stone-500 mt-1">
+                  Scanning folder: /Markdown Life Vault/
+                </p>
               </div>
             ) : files.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-8 bg-stone-50/50 text-center">
@@ -1127,13 +1199,18 @@ export default function App({ forceOffline = false }: AppProps) {
                       disabled={isRefreshingDrive}
                       className="inline-flex items-center gap-2 px-3.5 py-2.5 bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-50"
                     >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingDrive ? 'animate-spin text-blue-600' : ''}`} />
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 ${isRefreshingDrive ? 'animate-spin text-blue-600' : ''}`}
+                      />
                       Reload from Drive
                     </button>
                   )}
                 </div>
               </div>
-            ) : currentFile && getSheetSyncNoteId(currentFile.frontmatter) && sheetSourceFileId !== currentFile.id && !isMockMode ? (
+            ) : currentFile &&
+              getSheetSyncNoteId(currentFile.frontmatter) &&
+              sheetSourceFileId !== currentFile.id &&
+              !isMockMode ? (
               <SheetSyncView
                 key={currentFile.id}
                 spreadsheetId={getSheetSyncNoteId(currentFile.frontmatter)!}
@@ -1144,50 +1221,52 @@ export default function App({ forceOffline = false }: AppProps) {
               />
             ) : currentFile ? (
               <div className="flex-1 flex flex-col min-w-0">
-              {getSheetSyncNoteId(currentFile.frontmatter) && !isMockMode && (
-                <div className="flex items-center justify-between gap-2 px-4 py-1.5 bg-emerald-50 border-b border-emerald-200 text-xs text-emerald-800">
-                  <span>This note opens a SheetSync spreadsheet. You're editing its markdown.</span>
-                  <button
-                    type="button"
-                    onClick={() => setSheetSourceFileId(null)}
-                    className="font-semibold underline cursor-pointer whitespace-nowrap"
-                  >
-                    Back to the sheet
-                  </button>
-                </div>
-              )}
-              <MarkdownEditor
-                key={currentFile.id}
-                file={currentFile}
-                allFiles={files}
-                onChangeContent={handleUpdateContent}
-                onNavigateToFile={handleNavigateToFile}
-                onToggleCheckbox={handleToggleCheckbox}
-                onOpenSkillPlayground={(s) => setSkillForPlayground(s)}
-                onRenameFile={isTrailheadFile(currentFile) ? undefined : handleRenameFile}
-                onSaveToDrive={isMockMode ? undefined : handleRequestSaveFileToDrive}
-                onCopyDrivePath={handleCopyDrivePath}
-                onDeleteFile={isTrailheadFile(currentFile) ? undefined : handleDeleteFile}
-                isSavingToDrive={isSavingSingleFileToDrive}
-                isDriveSyncing={isDriveSyncing}
-                driveStatus={driveStatus}
-                isUnsavedToDrive={currentFile ? unsavedFileIds.has(currentFile.id) : false}
-                onReconnectDrive={handleReconnectDrive}
-                googleUser={googleUser}
-                onShareProject={(folder) => setSharingProjectFolder(folder)}
-                sharedDoc={
-                  isMockMode
-                    ? undefined
-                    : {
-                        linked: !!getLinkedDocId(currentFile),
-                        syncing: sharedDocStatus[currentFile.id]?.syncing,
-                        error: sharedDocStatus[currentFile.id]?.error,
-                        hasConflict: docConflictIds.has(currentFile.id),
-                      }
-                }
-                onOpenSharedDoc={() => setSharedDocFileId(currentFile.id)}
-                onResolveDocConflict={() => syncSharedDocNow(currentFile.id)}
-              />
+                {getSheetSyncNoteId(currentFile.frontmatter) && !isMockMode && (
+                  <div className="flex items-center justify-between gap-2 px-4 py-1.5 bg-emerald-50 border-b border-emerald-200 text-xs text-emerald-800">
+                    <span>
+                      This note opens a SheetSync spreadsheet. You're editing its markdown.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSheetSourceFileId(null)}
+                      className="font-semibold underline cursor-pointer whitespace-nowrap"
+                    >
+                      Back to the sheet
+                    </button>
+                  </div>
+                )}
+                <MarkdownEditor
+                  key={currentFile.id}
+                  file={currentFile}
+                  allFiles={files}
+                  onChangeContent={handleUpdateContent}
+                  onNavigateToFile={handleNavigateToFile}
+                  onToggleCheckbox={handleToggleCheckbox}
+                  onOpenSkillPlayground={(s) => setSkillForPlayground(s)}
+                  onRenameFile={isTrailheadFile(currentFile) ? undefined : handleRenameFile}
+                  onSaveToDrive={isMockMode ? undefined : handleRequestSaveFileToDrive}
+                  onCopyDrivePath={handleCopyDrivePath}
+                  onDeleteFile={isTrailheadFile(currentFile) ? undefined : handleDeleteFile}
+                  isSavingToDrive={isSavingSingleFileToDrive}
+                  isDriveSyncing={isDriveSyncing}
+                  driveStatus={driveStatus}
+                  isUnsavedToDrive={currentFile ? unsavedFileIds.has(currentFile.id) : false}
+                  onReconnectDrive={handleReconnectDrive}
+                  googleUser={googleUser}
+                  onShareProject={(folder) => setSharingProjectFolder(folder)}
+                  sharedDoc={
+                    isMockMode
+                      ? undefined
+                      : {
+                          linked: !!getLinkedDocId(currentFile),
+                          syncing: sharedDocStatus[currentFile.id]?.syncing,
+                          error: sharedDocStatus[currentFile.id]?.error,
+                          hasConflict: docConflictIds.has(currentFile.id),
+                        }
+                  }
+                  onOpenSharedDoc={() => setSharedDocFileId(currentFile.id)}
+                  onResolveDocConflict={() => syncSharedDocNow(currentFile.id)}
+                />
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center bg-white text-stone-400">

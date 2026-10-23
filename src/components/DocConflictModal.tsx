@@ -20,14 +20,20 @@ const OPTIONS: { value: ConflictChoice; label: string }[] = [
 const Lines: React.FC<{ lines: string[]; tone: 'mine' | 'theirs' }> = ({ lines, tone }) => (
   <pre
     className={`text-[11px] font-mono whitespace-pre-wrap break-words p-2 rounded-md border min-h-8 ${
-      tone === 'mine' ? 'bg-blue-50 border-blue-200 text-blue-950' : 'bg-emerald-50 border-emerald-200 text-emerald-950'
+      tone === 'mine'
+        ? 'bg-blue-50 border-blue-200 text-blue-950'
+        : 'bg-emerald-50 border-emerald-200 text-emerald-950'
     }`}
   >
     {lines.length ? lines.join('\n') : <span className="italic opacity-60">(deleted)</span>}
   </pre>
 );
 
-export const DocConflictModal: React.FC<DocConflictModalProps> = ({ conflict, fileName, onResolve }) => {
+export const DocConflictModal: React.FC<DocConflictModalProps> = ({
+  conflict,
+  fileName,
+  onResolve,
+}) => {
   const titleId = useId();
   const conflicts = conflict.merge.chunks.filter((c) => c.type === 'conflict');
   const [choices, setChoices] = useState<ConflictChoice[]>(() => conflicts.map(() => 'both'));
@@ -60,22 +66,32 @@ export const DocConflictModal: React.FC<DocConflictModalProps> = ({ conflict, fi
             <li key={i} className="space-y-2 p-3 rounded-xl border border-stone-200 bg-stone-50">
               <div className="grid gap-2 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-700">Yours (mdlife)</div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-700">
+                    Yours (mdlife)
+                  </div>
                   <Lines lines={chunk.mine} tone="mine" />
                 </div>
                 <div className="space-y-1">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Google Doc</div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                    Google Doc
+                  </div>
                   <Lines lines={chunk.theirs} tone="theirs" />
                 </div>
               </div>
-              <div role="radiogroup" aria-label={`Choice for change ${i + 1}`} className="flex flex-wrap gap-1.5">
+              <div
+                role="radiogroup"
+                aria-label={`Choice for change ${i + 1}`}
+                className="flex flex-wrap gap-1.5"
+              >
                 {OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
                     type="button"
                     role="radio"
                     aria-checked={choices[i] === opt.value}
-                    onClick={() => setChoices((prev) => prev.map((c, j) => (j === i ? opt.value : c)))}
+                    onClick={() =>
+                      setChoices((prev) => prev.map((c, j) => (j === i ? opt.value : c)))
+                    }
                     className={`px-2.5 py-1 text-xs rounded-md border cursor-pointer ${
                       choices[i] === opt.value
                         ? 'bg-stone-900 text-white border-stone-900'
@@ -87,13 +103,14 @@ export const DocConflictModal: React.FC<DocConflictModalProps> = ({ conflict, fi
                 ))}
               </div>
             </li>
-          ) : null
+          ) : null,
         )}
       </ol>
 
       <div className="flex items-center justify-between gap-2 pt-1">
         <p className="text-[11px] text-stone-500">
-          Until you decide, this note doesn't sync with the Google Doc. Older versions stay in Google Docs' version history.
+          Until you decide, this note doesn't sync with the Google Doc. Older versions stay in
+          Google Docs' version history.
         </p>
         <div className="flex gap-2 shrink-0">
           <button

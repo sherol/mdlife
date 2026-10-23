@@ -28,10 +28,21 @@ import {
   withNoteBody,
 } from '../utils/sharedDocs';
 import { ensureTrailhead, TRAILHEAD_ID } from '../utils/trailhead';
-import { ConflictChoice, MergeResult, mergeThreeWay, normalizeMarkdown, resolveChunks } from '../utils/docMerge';
+import {
+  ConflictChoice,
+  MergeResult,
+  mergeThreeWay,
+  normalizeMarkdown,
+  resolveChunks,
+} from '../utils/docMerge';
 import { subscribeDriveStatus, testDriveConnection } from '../utils/googleAuth';
 import { parseFrontmatter } from '../utils/markdownParser';
-import { loadPendingDeletions, savePendingDeletions, flushScheduledVaultSave } from '../utils/storage';
+import {
+  loadPendingDeletions,
+  savePendingDeletions,
+  flushScheduledVaultSave,
+} from '../utils/storage';
+import { getErrorMessage } from '../utils/errors';
 
 const AUTOSAVE_DELAY_MS = 1200;
 /** How often an open shared note checks its Google Doc for the other person's edits. */
@@ -99,7 +110,7 @@ export function mergeDriveFiles(
   localFiles: VaultFile[],
   driveFiles: VaultFile[],
   unsaved: Set<string>,
-  options: { pruneMissing: boolean; failedPaths?: Set<string> }
+  options: { pruneMissing: boolean; failedPaths?: Set<string> },
 ): { merged: VaultFile[]; preservedCount: number } {
   const mergedMap = new Map<string, VaultFile>();
   for (const df of driveFiles) {
@@ -161,12 +172,15 @@ export function useDriveSync({
   const [isDriveSyncing, setIsDriveSyncing] = useState(false);
   const [isRefreshingDrive, setIsRefreshingDrive] = useState(false);
   const [isLoadingDriveFiles, setIsLoadingDriveFiles] = useState(false);
-  const [pendingDeletionCount, setPendingDeletionCount] = useState(() => loadPendingDeletions().length);
+  const [pendingDeletionCount, setPendingDeletionCount] = useState(
+    () => loadPendingDeletions().length,
+  );
   const [docConflict, setDocConflict] = useState<DocConflict | null>(null);
   const [docConflictIds, setDocConflictIds] = useState<Set<string>>(() => new Set());
   const [sharedDocStatus, setSharedDocStatus] = useState<Record<string, SharedDocStatus>>({});
 
   const enabledRef = useRef(enabled);
+  /* eslint-disable react-hooks/refs -- "latest value in a ref" pattern (intentional, see eslint.config.js) */
   enabledRef.current = enabled;
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
@@ -174,12 +188,17 @@ export function useDriveSync({
   setDriveStatusRef.current = setDriveStatus;
   const setSelectedRef = useRef(setSelectedFileId);
   setSelectedRef.current = setSelectedFileId;
+  /* eslint-enable react-hooks/refs */
 
   // Auth status mirrored synchronously (the status listener fires inside googleSignIn/markTokenExpired).
   const authStatusRef = useRef<DriveConnectionStatus>('disconnected');
-  useEffect(() => subscribeDriveStatus((status) => {
-    authStatusRef.current = status;
-  }), []);
+  useEffect(
+    () =>
+      subscribeDriveStatus((status) => {
+        authStatusRef.current = status;
+      }),
+    [],
+  );
 
   const pendingSavesRef = useRef<Set<string>>(new Set());
   const resultsRef = useRef<Map<string, SaveOutcome>>(new Map());
@@ -198,24 +217,30 @@ export function useDriveSync({
     setPendingDeletionCount(next.length);
   }, []);
 
-  const removeUnsaved = useCallback((id: string) => {
-    updateUnsaved((prev) => {
-      if (!prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-  }, [updateUnsaved]);
+  const removeUnsaved = useCallback(
+    (id: string) => {
+      updateUnsaved((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    },
+    [updateUnsaved],
+  );
 
   /** Marks files as having local edits not yet in Drive. */
-  const markUnsaved = useCallback((ids: string[]) => {
-    if (ids.length === 0) return;
-    updateUnsaved((prev) => {
-      const next = new Set(prev);
-      ids.forEach((id) => next.add(id));
-      return next;
-    });
-  }, [updateUnsaved]);
+  const markUnsaved = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
+      updateUnsaved((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.add(id));
+        return next;
+      });
+    },
+    [updateUnsaved],
+  );
 
   /**
    * Records a successful save: persists driveFileId/modifiedTime on the file, and clears its
@@ -227,7 +252,11 @@ export function useDriveSync({
         let changed = false;
         const next = prev.map((f) => {
           if (f.id !== localId) return f;
-          if (f.driveFileId === driveFileId && (!modifiedTime || f.driveModifiedTime === modifiedTime)) return f;
+          if (
+            f.driveFileId === driveFileId &&
+            (!modifiedTime || f.driveModifiedTime === modifiedTime)
+          )
+            return f;
           changed = true;
           return { ...f, driveFileId, driveModifiedTime: modifiedTime || f.driveModifiedTime };
         });
@@ -238,13 +267,14 @@ export function useDriveSync({
         removeUnsaved(localId);
       }
     },
-    [filesRef, updateFiles, removeUnsaved]
+    [filesRef, updateFiles, removeUnsaved],
   );
 
   // Saves done by bulk "sync all" (e.g. from GoogleDriveSyncModal) also update local state.
   useEffect(
-    () => subscribeDriveSaves((e) => recordSaved(e.localId, e.content, e.driveFileId, e.modifiedTime)),
-    [recordSaved]
+    () =>
+      subscribeDriveSaves((e) => recordSaved(e.localId, e.content, e.driveFileId, e.modifiedTime)),
+    [recordSaved],
   );
 
   const handleAuthFailure = () => {
@@ -282,7 +312,11 @@ export function useDriveSync({
       for (const f of prev) {
         // Acknowledge the remote version: it is preserved in the conflict copy, so the local
         // version (still unsaved) may be written on the next save.
-        next.push(f.id === file.id ? { ...f, driveModifiedTime: remote.modifiedTime || err.remoteModifiedTime } : f);
+        next.push(
+          f.id === file.id
+            ? { ...f, driveModifiedTime: remote.modifiedTime || err.remoteModifiedTime }
+            : f,
+        );
         if (f.id === file.id) next.push(copy);
       }
       return next;
@@ -327,7 +361,9 @@ export function useDriveSync({
     }
     if (finalBody === currentBody) return true;
     const content = withNoteBody(current.content, finalBody);
-    updateFiles((prev) => prev.map((f) => (f.id === id ? { ...f, content, updatedAt: Date.now() } : f)));
+    updateFiles((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, content, updatedAt: Date.now() } : f)),
+    );
     markUnsaved([id]);
     return true;
   };
@@ -342,11 +378,20 @@ export function useDriveSync({
     setDocStatus(id, { syncing: true });
     try {
       const outcome = await withDriveFileLock(`doc:${id}`, () =>
-        syncNoteWithDoc(docId, file.content, docSyncStore.get(id, docId), unsavedRef.current.has(id), docApi)
+        syncNoteWithDoc(
+          docId,
+          file.content,
+          docSyncStore.get(id, docId),
+          unsavedRef.current.has(id),
+          docApi,
+        ),
       );
 
       if (outcome.kind === 'missing') {
-        setDocStatus(id, { syncing: false, error: 'The linked Google Doc was deleted or is no longer accessible.' });
+        setDocStatus(id, {
+          syncing: false,
+          error: 'The linked Google Doc was deleted or is no longer accessible.',
+        });
         if (!missingDocNotifiedRef.current.has(id)) {
           missingDocNotifiedRef.current.add(id);
           notifyRef.current({
@@ -377,11 +422,11 @@ export function useDriveSync({
       }
       missingDocNotifiedRef.current.delete(id);
       setDocStatus(id, { syncing: false, syncedAt: Date.now(), error: undefined });
-    } catch (err: any) {
+    } catch (err) {
       setDocStatus(id, { syncing: false });
       if (err instanceof DriveAuthError) return 'auth';
       console.error(`Google Doc sync failed for ${file.name}:`, err);
-      setDocStatus(id, { error: err?.message || 'Could not sync with the Google Doc.' });
+      setDocStatus(id, { error: getErrorMessage(err) || 'Could not sync with the Google Doc.' });
     }
     return 'ok';
   };
@@ -485,21 +530,23 @@ export function useDriveSync({
   /**
    * Deletes a file from Drive, or queues the deletion (persisted) to retry on reconnect.
    */
-  const deleteFromDrive = useCallback(async (file: VaultFile): Promise<'deleted' | 'queued'> => {
-    pendingSavesRef.current.delete(file.id);
-    const entry: PendingDriveDeletion = {
-      id: file.id,
-      folder: file.folder,
-      name: file.name,
-      driveFileId: file.driveFileId,
-      queuedAt: Date.now(),
-    };
-    setPendingDeletions([...pendingDeletionsRef.current.filter((d) => d.id !== file.id), entry]);
-    if (!canSync()) return 'queued';
-    await flushSaves([]);
-    return pendingDeletionsRef.current.includes(entry) ? 'queued' : 'deleted';
-     
-  }, [flushSaves, setPendingDeletions]);
+  const deleteFromDrive = useCallback(
+    async (file: VaultFile): Promise<'deleted' | 'queued'> => {
+      pendingSavesRef.current.delete(file.id);
+      const entry: PendingDriveDeletion = {
+        id: file.id,
+        folder: file.folder,
+        name: file.name,
+        driveFileId: file.driveFileId,
+        queuedAt: Date.now(),
+      };
+      setPendingDeletions([...pendingDeletionsRef.current.filter((d) => d.id !== file.id), entry]);
+      if (!canSync()) return 'queued';
+      await flushSaves([]);
+      return pendingDeletionsRef.current.includes(entry) ? 'queued' : 'deleted';
+    },
+    [flushSaves, setPendingDeletions],
+  );
 
   /** Drops all queued saves, unsaved flags and pending deletions (Drive wins). */
   const discardLocalChanges = useCallback(() => {
@@ -532,86 +579,99 @@ export function useDriveSync({
   /**
    * Fetches the full vault from Google Drive and safely merges it with local edits so work is never lost.
    */
-  const refreshFromDrive = useCallback(async (isSilent = false): Promise<boolean> => {
-    if (isFetchingRef.current) return false;
-    isFetchingRef.current = true;
-    try {
-      setIsRefreshingDrive(true);
-      if (!isSilent) setIsLoadingDriveFiles(true);
-      const snapshot = await importVaultFromDrive();
-      const { merged, preservedCount } = mergeDriveFiles(
-        filesRef.current,
-        snapshot.files,
-        unsavedRef.current,
-        { pruneMissing: true, failedPaths: snapshot.failedPaths }
-      );
-      // Every vault has trailhead/start.md: create (or move from the old README.md) and upload it.
-      const withTrailhead = ensureTrailhead(merged);
-      updateFiles(() => withTrailhead.files);
-      if (withTrailhead.startChanged) markUnsaved([TRAILHEAD_ID]);
-      if (withTrailhead.removedLegacy) {
-        const legacy = withTrailhead.removedLegacy;
-        updateUnsaved((prev) => {
-          if (!prev.has(legacy.id)) return prev;
-          const next = new Set(prev);
-          next.delete(legacy.id);
-          return next;
+  const refreshFromDrive = useCallback(
+    async (isSilent = false): Promise<boolean> => {
+      if (isFetchingRef.current) return false;
+      isFetchingRef.current = true;
+      try {
+        setIsRefreshingDrive(true);
+        if (!isSilent) setIsLoadingDriveFiles(true);
+        const snapshot = await importVaultFromDrive();
+        const { merged, preservedCount } = mergeDriveFiles(
+          filesRef.current,
+          snapshot.files,
+          unsavedRef.current,
+          { pruneMissing: true, failedPaths: snapshot.failedPaths },
+        );
+        // Every vault has trailhead/start.md: create (or move from the old README.md) and upload it.
+        const withTrailhead = ensureTrailhead(merged);
+        updateFiles(() => withTrailhead.files);
+        if (withTrailhead.startChanged) markUnsaved([TRAILHEAD_ID]);
+        if (withTrailhead.removedLegacy) {
+          const legacy = withTrailhead.removedLegacy;
+          updateUnsaved((prev) => {
+            if (!prev.has(legacy.id)) return prev;
+            const next = new Set(prev);
+            next.delete(legacy.id);
+            return next;
+          });
+          if (legacy.driveFileId) void deleteFromDrive(legacy);
+        }
+        merged.filter((f) => getLinkedDocId(f)).forEach((f) => queueDocSync(f.id));
+
+        const allFiles = withTrailhead.files;
+        setSelectedRef.current((prev) =>
+          prev && allFiles.some((f) => f.id === prev) ? prev : TRAILHEAD_ID,
+        );
+
+        if (!isSilent) {
+          if (snapshot.files.length === 0) {
+            notifyRef.current({
+              type: 'info',
+              text: 'Google Drive connected: 0 files in /Markdown Life Vault/.',
+            });
+          } else if (preservedCount > 0) {
+            notifyRef.current({
+              type: 'info',
+              text: `Synced with Google Drive (${snapshot.files.length} file(s)). Safely preserved ${preservedCount} local file(s) with unsaved edits.`,
+            });
+          } else {
+            notifyRef.current({
+              type: 'success',
+              text: `Synced with Google Drive: loaded ${snapshot.files.length} file(s).`,
+            });
+          }
+          if (snapshot.failedPaths.size > 0) {
+            notifyRef.current({
+              type: 'error',
+              text: `Could not download ${snapshot.failedPaths.size} file(s) from Google Drive; kept their local copies.`,
+            });
+          }
+        }
+        return true;
+      } catch (err) {
+        console.error('Failed to load files from Google Drive:', err);
+        if (err instanceof DriveAuthError) {
+          setDriveStatusRef.current('expired');
+        }
+        notifyRef.current({
+          type: 'error',
+          text: getErrorMessage(err) || 'Failed to load files from Google Drive',
         });
-        if (legacy.driveFileId) void deleteFromDrive(legacy);
+        return false;
+      } finally {
+        isFetchingRef.current = false;
+        setIsRefreshingDrive(false);
+        setIsLoadingDriveFiles(false);
       }
-      merged.filter((f) => getLinkedDocId(f)).forEach((f) => queueDocSync(f.id));
-
-      const allFiles = withTrailhead.files;
-      setSelectedRef.current((prev) => (prev && allFiles.some((f) => f.id === prev) ? prev : TRAILHEAD_ID));
-
-      if (!isSilent) {
-        if (snapshot.files.length === 0) {
-          notifyRef.current({ type: 'info', text: 'Google Drive connected: 0 files in /Markdown Life Vault/.' });
-        } else if (preservedCount > 0) {
-          notifyRef.current({
-            type: 'info',
-            text: `Synced with Google Drive (${snapshot.files.length} file(s)). Safely preserved ${preservedCount} local file(s) with unsaved edits.`,
-          });
-        } else {
-          notifyRef.current({
-            type: 'success',
-            text: `Synced with Google Drive: loaded ${snapshot.files.length} file(s).`,
-          });
-        }
-        if (snapshot.failedPaths.size > 0) {
-          notifyRef.current({
-            type: 'error',
-            text: `Could not download ${snapshot.failedPaths.size} file(s) from Google Drive; kept their local copies.`,
-          });
-        }
-      }
-      return true;
-    } catch (err: any) {
-      console.error('Failed to load files from Google Drive:', err);
-      if (err instanceof DriveAuthError) {
-        setDriveStatusRef.current('expired');
-      }
-      notifyRef.current({
-        type: 'error',
-        text: err?.message || 'Failed to load files from Google Drive',
-      });
-      return false;
-    } finally {
-      isFetchingRef.current = false;
-      setIsRefreshingDrive(false);
-      setIsLoadingDriveFiles(false);
-    }
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filesRef, unsavedRef, updateFiles]);
+    [filesRef, unsavedRef, updateFiles],
+  );
 
   /** Merges files imported elsewhere (e.g. the Drive modal) without dropping any local files. */
-  const mergeImportedFiles = useCallback((driveFiles: VaultFile[]) => {
-    const { merged } = mergeDriveFiles(filesRef.current, driveFiles, unsavedRef.current, { pruneMissing: false });
-    updateFiles(() => merged);
-    if (driveFiles.length > 0) {
-      setSelectedRef.current((prev) => prev || driveFiles[0].id);
-    }
-  }, [filesRef, unsavedRef, updateFiles]);
+  const mergeImportedFiles = useCallback(
+    (driveFiles: VaultFile[]) => {
+      const { merged } = mergeDriveFiles(filesRef.current, driveFiles, unsavedRef.current, {
+        pruneMissing: false,
+      });
+      updateFiles(() => merged);
+      if (driveFiles.length > 0) {
+        setSelectedRef.current((prev) => prev || driveFiles[0].id);
+      }
+    },
+    [filesRef, unsavedRef, updateFiles],
+  );
 
   /** Creates a Google Doc from the note, links them, and optionally shares it as editor. */
   const shareNoteAsGoogleDoc = useCallback(
@@ -632,8 +692,15 @@ export function useDriveSync({
       const content = setLinkedDocId(file.content, meta.id);
       updateFiles((prev) =>
         prev.map((f) =>
-          f.id === id ? { ...f, content, frontmatter: parseFrontmatter(content).frontmatter, updatedAt: Date.now() } : f
-        )
+          f.id === id
+            ? {
+                ...f,
+                content,
+                frontmatter: parseFrontmatter(content).frontmatter,
+                updatedAt: Date.now(),
+              }
+            : f,
+        ),
       );
       markUnsaved([id]);
       setDocStatus(id, { syncedAt: Date.now(), error: undefined });
@@ -642,9 +709,8 @@ export function useDriveSync({
       }
       flushSaves([id]);
       return meta;
-       
     },
-    [filesRef, updateFiles, markUnsaved, flushSaves]
+    [filesRef, updateFiles, markUnsaved, flushSaves],
   );
 
   /** Stops syncing a note with its Google Doc (the doc itself is left untouched). */
@@ -655,15 +721,21 @@ export function useDriveSync({
       const content = setLinkedDocId(file.content, null);
       updateFiles((prev) =>
         prev.map((f) =>
-          f.id === id ? { ...f, content, frontmatter: parseFrontmatter(content).frontmatter, updatedAt: Date.now() } : f
-        )
+          f.id === id
+            ? {
+                ...f,
+                content,
+                frontmatter: parseFrontmatter(content).frontmatter,
+                updatedAt: Date.now(),
+              }
+            : f,
+        ),
       );
       docSyncStore.remove(id);
       setConflictFlag(id, false);
       markUnsaved([id]);
-       
     },
-    [filesRef, updateFiles, markUnsaved]
+    [filesRef, updateFiles, markUnsaved],
   );
 
   /** Applies the user's choices for each overlapping edit, or (null) postpones the decision. */
@@ -675,15 +747,19 @@ export function useDriveSync({
       const file = filesRef.current.find((f) => f.id === conflict.fileId);
       if (!file) return;
       const resolved = resolveChunks(conflict.merge.chunks, choices);
-      docSyncStore.set(conflict.fileId, stateAfterConflictResolution(conflict.docId, conflict.remoteBody, conflict.version));
+      docSyncStore.set(
+        conflict.fileId,
+        stateAfterConflictResolution(conflict.docId, conflict.remoteBody, conflict.version),
+      );
       const content = withNoteBody(file.content, resolved);
-      updateFiles((prev) => prev.map((f) => (f.id === conflict.fileId ? { ...f, content, updatedAt: Date.now() } : f)));
+      updateFiles((prev) =>
+        prev.map((f) => (f.id === conflict.fileId ? { ...f, content, updatedAt: Date.now() } : f)),
+      );
       setConflictFlag(conflict.fileId, false);
       markUnsaved([conflict.fileId]);
       flushSaves([conflict.fileId]);
-       
     },
-    [docConflict, filesRef, updateFiles, markUnsaved, flushSaves]
+    [docConflict, filesRef, updateFiles, markUnsaved, flushSaves],
   );
 
   // Keep the open shared note in step with its Google Doc: on open, on focus, and periodically.
@@ -729,7 +805,10 @@ export function useDriveSync({
 
     const handleOnline = async () => {
       if (!enabledRef.current) return;
-      notifyRef.current({ type: 'info', text: 'Internet restored! Checking Google Drive connection...' });
+      notifyRef.current({
+        type: 'info',
+        text: 'Internet restored! Checking Google Drive connection...',
+      });
       const res = await testDriveConnection();
       if (!res.ok) {
         setDriveStatusRef.current(res.expired ? 'expired' : 'disconnected');
@@ -760,7 +839,10 @@ export function useDriveSync({
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       flushScheduledVaultSave();
-      if (enabledRef.current && (unsavedRef.current.size > 0 || pendingDeletionsRef.current.length > 0)) {
+      if (
+        enabledRef.current &&
+        (unsavedRef.current.size > 0 || pendingDeletionsRef.current.length > 0)
+      ) {
         e.preventDefault();
         e.returnValue = '';
       }
@@ -782,21 +864,36 @@ export function useDriveSync({
       flushScheduledVaultSave();
       if (!enabledRef.current) return;
       if (authStatusRef.current === 'expired') {
-        notifyRef.current({ type: 'error', text: 'Google Drive session expired. Click Reconnect to save your changes.' });
+        notifyRef.current({
+          type: 'error',
+          text: 'Google Drive session expired. Click Reconnect to save your changes.',
+        });
         return;
       }
       if (unsavedRef.current.size === 0 && pendingDeletionsRef.current.length === 0) {
-        notifyRef.current({ type: 'info', text: 'All files are already in sync with Google Drive.' });
+        notifyRef.current({
+          type: 'info',
+          text: 'All files are already in sync with Google Drive.',
+        });
         return;
       }
       flushSaves().then((summary) => {
         if (summary.authFailed) return;
         if (summary.failed > 0) {
-          notifyRef.current({ type: 'error', text: `Saved ${summary.saved} file(s); ${summary.failed} failed to save to Google Drive.` });
+          notifyRef.current({
+            type: 'error',
+            text: `Saved ${summary.saved} file(s); ${summary.failed} failed to save to Google Drive.`,
+          });
         } else if (summary.saved > 0) {
-          notifyRef.current({ type: 'success', text: `Saved ${summary.saved} file(s) to Google Drive.` });
+          notifyRef.current({
+            type: 'success',
+            text: `Saved ${summary.saved} file(s) to Google Drive.`,
+          });
         } else if (summary.skipped > 0) {
-          notifyRef.current({ type: 'info', text: 'Saved locally. Changes will sync to Google Drive when the connection is back.' });
+          notifyRef.current({
+            type: 'info',
+            text: 'Saved locally. Changes will sync to Google Drive when the connection is back.',
+          });
         }
       });
     };

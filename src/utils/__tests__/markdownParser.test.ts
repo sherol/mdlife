@@ -4,6 +4,7 @@ import {
   extractWikiLinks,
   getTaskProgress,
   parseFrontmatter,
+  quoteYamlString,
   stringifyWithFrontmatter,
   toggleCheckboxInMarkdown,
   updateWikiLinks,
@@ -175,5 +176,58 @@ describe('updateWikiLinks', () => {
   it('leaves unrelated and partially matching links alone', () => {
     const md = '[[other]] [[old-note-2]] [[my-old-note]]';
     expect(updateWikiLinks(md, 'old-note.md', 'new-note.md')).toBe(md);
+  });
+});
+
+describe('quoted frontmatter titles', () => {
+  const titles = [
+    'My "Big" Plan',
+    'C:\\Users\\me\\notes',
+    'Ends with backslash \\',
+    'Escaped quote \\" inside',
+    'Plan: Q1 #1 [draft]',
+    '"Fully quoted"',
+    "It's fine",
+  ];
+
+  it.each(titles)(
+    'round-trips %s through quoteYamlString (as Google Doc import writes it)',
+    (title) => {
+      const md = [
+        '---',
+        `title: ${quoteYamlString(title)}`,
+        'category: notes',
+        'tags:',
+        '  - gdocs-import',
+        '---',
+        '',
+        'Body',
+      ].join('\n');
+      expect(parseFrontmatter(md).frontmatter.title).toBe(title);
+    },
+  );
+
+  it.each(titles)('round-trips %s through stringifyWithFrontmatter', (title) => {
+    const out = stringifyWithFrontmatter({ title, tags: [title] }, 'Body');
+    expect(parseFrontmatter(out).frontmatter).toEqual({ title, tags: [title] });
+  });
+
+  it('unescapes YAML double- and single-quoted scalars', () => {
+    const md = [
+      '---',
+      'a: "say \\"hi\\" \\\\ bye"',
+      "b: 'it''s'",
+      'c: "C:\\temp"',
+      'd: plain "text" here',
+      '---',
+      '',
+    ].join('\n');
+    expect(parseFrontmatter(md).frontmatter).toMatchObject({
+      a: 'say "hi" \\ bye',
+      b: "it's",
+      // Unknown escapes keep their backslash, so older files stay readable.
+      c: 'C:\\temp',
+      d: 'plain "text" here',
+    });
   });
 });

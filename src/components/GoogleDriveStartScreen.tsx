@@ -74,7 +74,8 @@ export const GoogleDriveStartScreen: React.FC<GoogleDriveStartScreenProps> = ({
               Connect Your Google Drive
             </h1>
             <p className="text-stone-500 text-xs sm:text-sm leading-relaxed max-w-sm mx-auto">
-              Organize your 1. Goals, 2. Projects, 3. Agent Skills, 4. Notes, and 5. Archive as portable Markdown files in your Google Drive.
+              Organize your 1. Goals, 2. Projects, 3. Agent Skills, 4. Notes, and 5. Archive as
+              portable Markdown files in your Google Drive.
             </p>
           </div>
 
@@ -94,7 +95,8 @@ export const GoogleDriveStartScreen: React.FC<GoogleDriveStartScreenProps> = ({
               {isUnauthorizedDomain && (
                 <div className="mt-2 pt-2 border-t border-amber-200/70 text-[11px] text-stone-700 space-y-2">
                   <p>
-                    Google Sign-In security requires your hosting domain to be registered in Firebase Authentication.
+                    Google Sign-In security requires your hosting domain to be registered in
+                    Firebase Authentication.
                   </p>
                   <div className="flex items-center justify-between bg-white/80 border border-stone-200 rounded-md px-2.5 py-1.5 font-mono text-[11px] text-stone-800">
                     <span className="truncate mr-2 font-semibold">{currentHostname}</span>
@@ -120,8 +122,16 @@ export const GoogleDriveStartScreen: React.FC<GoogleDriveStartScreenProps> = ({
                     <div className="text-[11px] text-stone-600">
                       <strong>To fix:</strong>
                       <ol className="list-decimal list-inside space-y-0.5 mt-1 ml-0.5 text-stone-600">
-                        <li>Go to Firebase Console &rarr; Authentication &rarr; Settings &rarr; Authorized domains</li>
-                        <li>Click <strong>Add domain</strong> and paste <code className="bg-amber-100/80 px-1 rounded font-mono">{currentHostname}</code></li>
+                        <li>
+                          Go to Firebase Console &rarr; Authentication &rarr; Settings &rarr;
+                          Authorized domains
+                        </li>
+                        <li>
+                          Click <strong>Add domain</strong> and paste{' '}
+                          <code className="bg-amber-100/80 px-1 rounded font-mono">
+                            {currentHostname}
+                          </code>
+                        </li>
                       </ol>
                     </div>
                     <a
@@ -198,7 +208,11 @@ export const GoogleDriveStartScreen: React.FC<GoogleDriveStartScreenProps> = ({
                 <FolderCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                 <div>
                   <span className="font-semibold text-stone-800">Direct Drive Storage: </span>
-                  Files are saved in <code className="text-[11px] font-mono bg-stone-200/70 px-1 py-0.5 rounded text-stone-800">/Markdown Life Vault/</code> as standard markdown (.md).
+                  Files are saved in{' '}
+                  <code className="text-[11px] font-mono bg-stone-200/70 px-1 py-0.5 rounded text-stone-800">
+                    /Markdown Life Vault/
+                  </code>{' '}
+                  as standard markdown (.md).
                 </div>
               </div>
 
@@ -206,7 +220,9 @@ export const GoogleDriveStartScreen: React.FC<GoogleDriveStartScreenProps> = ({
                 <Lock className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <div>
                   <span className="font-semibold text-stone-800">Strict Least Privilege: </span>
-                  The app only requests access to files it creates (<code className="text-[11px] font-mono text-stone-700">drive.file</code>). Your other Drive documents remain private.
+                  The app only requests access to files it creates (
+                  <code className="text-[11px] font-mono text-stone-700">drive.file</code>). Your
+                  other Drive documents remain private.
                 </div>
               </div>
 
@@ -214,7 +230,8 @@ export const GoogleDriveStartScreen: React.FC<GoogleDriveStartScreenProps> = ({
                 <FolderSync className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
                   <span className="font-semibold text-stone-800">Cross-Platform Freedom: </span>
-                  Sync seamlessly between this web app, Obsidian, VS Code, and mobile markdown editors.
+                  Sync seamlessly between this web app, Obsidian, VS Code, and mobile markdown
+                  editors.
                 </div>
               </div>
             </div>
@@ -224,7 +241,8 @@ export const GoogleDriveStartScreen: React.FC<GoogleDriveStartScreenProps> = ({
 
       {/* Footer info */}
       <footer className="max-w-4xl w-full mx-auto text-center py-2 text-[11px] text-stone-400">
-        Markdown Life & Skills Vault &bull; Google Workspace Drive API &bull; Client-Side Encryption in Memory
+        Markdown Life & Skills Vault &bull; Google Workspace Drive API &bull; Client-Side Encryption
+        in Memory
       </footer>
     </div>
   );

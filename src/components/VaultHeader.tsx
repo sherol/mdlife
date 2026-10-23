@@ -73,25 +73,32 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Compute vault stats (task parsing touches every file, so only recompute when files change)
-  const { goalsCount, projectsCount, skillsCount, archiveCount, totalTasks, completedTasks, taskPct } =
-    useMemo(() => {
-      let totalTasks = 0;
-      let completedTasks = 0;
-      for (const f of files) {
-        const progress = getTaskProgress(f.content);
-        totalTasks += progress.total;
-        completedTasks += progress.completed;
-      }
-      return {
-        goalsCount: files.filter(isGoalFile).length,
-        projectsCount: files.filter(isProjectFile).length,
-        skillsCount: files.filter(isSkillFile).length,
-        archiveCount: files.filter(isArchiveFile).length,
-        totalTasks,
-        completedTasks,
-        taskPct: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
-      };
-    }, [files]);
+  const {
+    goalsCount,
+    projectsCount,
+    skillsCount,
+    archiveCount,
+    totalTasks,
+    completedTasks,
+    taskPct,
+  } = useMemo(() => {
+    let totalTasks = 0;
+    let completedTasks = 0;
+    for (const f of files) {
+      const progress = getTaskProgress(f.content);
+      totalTasks += progress.total;
+      completedTasks += progress.completed;
+    }
+    return {
+      goalsCount: files.filter(isGoalFile).length,
+      projectsCount: files.filter(isProjectFile).length,
+      skillsCount: files.filter(isSkillFile).length,
+      archiveCount: files.filter(isArchiveFile).length,
+      totalTasks,
+      completedTasks,
+      taskPct: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+    };
+  }, [files]);
 
   const handleExportZip = async () => {
     try {
@@ -119,7 +126,12 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
         {/* Brand & Stats */}
         <div className="flex items-center gap-3">
           <div className="keep-light-palette w-10 h-10 rounded-xl overflow-hidden shadow-xs border border-stone-800 bg-[#111827] flex items-center justify-center shrink-0 p-0.5">
-            <img src={SQUIRREL_FAVICON_DATA_URI} alt="" aria-hidden="true" className="w-full h-full object-contain" />
+            <img
+              src={SQUIRREL_FAVICON_DATA_URI}
+              alt=""
+              aria-hidden="true"
+              className="w-full h-full object-contain"
+            />
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -158,14 +170,18 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
               <span className="text-stone-300">•</span>
               <span className="inline-flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5 text-stone-600" />
-                <strong className="text-stone-800 font-semibold">{completedTasks}/{totalTasks}</strong> Tasks ({taskPct}%)
+                <strong className="text-stone-800 font-semibold">
+                  {completedTasks}/{totalTasks}
+                </strong>{' '}
+                Tasks ({taskPct}%)
               </span>
               {archiveCount > 0 && (
                 <>
                   <span className="text-stone-300">•</span>
                   <span className="inline-flex items-center gap-1 text-stone-400">
                     <FolderArchive className="w-3.5 h-3.5 text-stone-400" />
-                    <strong className="text-stone-600 font-semibold">{archiveCount}</strong> Archived
+                    <strong className="text-stone-600 font-semibold">{archiveCount}</strong>{' '}
+                    Archived
                   </span>
                 </>
               )}
@@ -253,7 +269,10 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
                       <HardDrive className="w-3.5 h-3.5 text-emerald-600" />
                     )}
                     <span>{isRefreshingDrive ? 'Syncing...' : 'Drive Active'}</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5" title="Connected & Active" />
+                    <span
+                      className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5"
+                      title="Connected & Active"
+                    />
                     {unsavedFilesCount > 0 && (
                       <span
                         className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300"
@@ -277,7 +296,8 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
                     </button>
                   )}
                 </>
-              ) : driveStatus === 'expired' || (driveStatus === 'disconnected' && (googleUser || unsavedFilesCount > 0)) ? (
+              ) : driveStatus === 'expired' ||
+                (driveStatus === 'disconnected' && (googleUser || unsavedFilesCount > 0)) ? (
                 <button
                   type="button"
                   id="btn-reconnect-drive-header"
@@ -366,11 +386,19 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
               disabled={backupProgress !== null}
               onClick={onBackup}
               title="Backup: save a snapshot of all files to backup/ in your Google Drive vault"
-              aria-label={backupProgress !== null ? `Backing up ${backupProgress}` : 'Backup all files to Google Drive'}
+              aria-label={
+                backupProgress !== null
+                  ? `Backing up ${backupProgress}`
+                  : 'Backup all files to Google Drive'
+              }
               className="inline-flex items-center gap-1 p-2 text-xs font-medium text-stone-600 bg-white hover:bg-stone-100 hover:text-stone-900 border border-stone-200 rounded-lg transition-colors disabled:opacity-60 cursor-pointer"
             >
-              <DatabaseBackup className={`w-4 h-4 ${backupProgress !== null ? 'animate-pulse' : ''}`} />
-              {backupProgress !== null && <span className="font-mono text-[10px]">{backupProgress}</span>}
+              <DatabaseBackup
+                className={`w-4 h-4 ${backupProgress !== null ? 'animate-pulse' : ''}`}
+              />
+              {backupProgress !== null && (
+                <span className="font-mono text-[10px]">{backupProgress}</span>
+              )}
             </button>
           )}
 

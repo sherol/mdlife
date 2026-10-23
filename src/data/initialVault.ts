@@ -54,7 +54,7 @@ Establish complete proficiency in developing, evaluating, and deploying multi-ag
 
 ## Review Notes
 Q3 checkpoint demonstrated reliable tool calling using standard schema validation. Moving focus to context compression and memory compaction.
-`
+`,
   },
   {
     path: 'goals/endurance-vitality.md',
@@ -91,7 +91,7 @@ Build a durable, high-energy physical vessel through disciplined cardiovascular 
 
 ## Agent Skills Utilized
 - \`@deep-work-planner\` to schedule training blocks around peak cognitive windows without burnout.
-`
+`,
   },
   {
     path: 'goals/financial-independence-engine.md',
@@ -124,7 +124,7 @@ Optimize savings rate to 50%+ through intentional living, maintain low-cost dive
 ## Quarterly Checkpoints
 - **Q1**: Portfolio allocation review and expense auditing.
 - **Q2**: Tax optimization and corporate entity structuring.
-`
+`,
   },
 
   // --- PROJECTS ---
@@ -185,7 +185,7 @@ Develop a modular agent workflow that accepts a research topic query, searches a
 - [Google AI Studio Documentation](https://ai.google.dev)
 - [arXiv CS.AI Preprints](https://arxiv.org/list/cs.AI/recent)
 - Parent Goal: [[ai-systems-mastery.md]]
-`
+`,
   },
   {
     path: 'projects/half-marathon-sub-1h45/half-marathon-sub-1h45.md',
@@ -234,7 +234,7 @@ Finish the 21.1 km course in 1 hour 44 minutes 59 seconds or faster (requires st
 - Post-run protein intake (30g within 45 mins)
 - 15-minute daily hip mobility and ankle dorsiflexion routine
 - Hydration baseline: 3L water + electrolytes on high humidity days
-`
+`,
   },
   {
     path: 'projects/second-brain-pkm/second-brain-pkm.md',
@@ -272,7 +272,7 @@ Design a unified, plain-text markdown file system that bridges human long-term p
 ## Philosophy
 - **Zero Lock-In**: Everything is pure, portable Markdown (.md).
 - **Executable Prompts**: Agent skills are stored directly alongside life goals so AI can act with complete context.
-`
+`,
   },
 
   // --- AGENT SKILLS ---
@@ -332,7 +332,7 @@ Provide your findings in this exact format:
 ### Recommended Next Action
 - Concrete project steps to test
 \`\`\`
-`
+`,
   },
   {
     path: 'skills/code-architect.md',
@@ -376,7 +376,7 @@ Respond strictly in four sections:
 3. **Complexity Delta**: Time and space complexity before vs after.
 4. **Unit Test Blueprint**: 3 edge-case test specifications to add to test runner.
 \`\`\`
-`
+`,
   },
   {
     path: 'skills/deep-work-planner.md',
@@ -421,7 +421,7 @@ Transform open projects and ambitious goals into a realistic, low-friction weekl
   - Midday Recovery / Physical Training: [Routine]
   - Afternoon Secondary Block: [Target item]
 \`\`\`
-`
+`,
   },
   {
     path: 'skills/prompt-evaluator.md',
@@ -452,7 +452,7 @@ Stress-test and audit system prompts for edge-case failures, ambiguity, jailbrea
 1. **Format Enforcement**: Does the prompt include strict negative constraints?
 2. **Token Economy**: Can redundant instructions be pruned by 30%+ without losing semantic intent?
 3. **Ambiguity Test**: Can a user input intentionally mislead the agent into conflicting instructions?
-`
+`,
   },
 
   // --- NOTES ---
@@ -486,7 +486,7 @@ tags:
 
 ## 3. Run Agent Planner
 - Trigger \`@deep-work-planner\` with upcoming week's calendar constraints.
-`
+`,
   },
 
   // --- ARCHIVE ---
@@ -520,23 +520,26 @@ All 2025 annual targets completed and preserved into cold storage. Foundational 
 ## Retrospective Lessons
 - Prioritize deterministic frontmatter schemas over freeform tags.
 - Keep weekly reviews sacred to prevent goal drift.
-`
-  }
+`,
+  },
 ];
 
 export function getInitialVaultFiles(): VaultFile[] {
   const now = Date.now();
-  return [createTrailheadFile(now), ...rawFiles.map((rf) => {
-    const { frontmatter } = parseFrontmatter(rf.content);
-    return {
-      id: rf.path,
-      name: rf.name,
-      path: rf.path,
-      folder: rf.folder,
-      content: rf.content,
-      frontmatter,
-      createdAt: now,
-      updatedAt: now,
-    };
-  })];
+  return [
+    createTrailheadFile(now),
+    ...rawFiles.map((rf) => {
+      const { frontmatter } = parseFrontmatter(rf.content);
+      return {
+        id: rf.path,
+        name: rf.name,
+        path: rf.path,
+        folder: rf.folder,
+        content: rf.content,
+        frontmatter,
+        createdAt: now,
+        updatedAt: now,
+      };
+    }),
+  ];
 }

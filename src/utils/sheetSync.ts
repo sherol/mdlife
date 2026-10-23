@@ -12,6 +12,8 @@
 import { getAccessToken, markTokenExpired } from './googleAuth';
 import { openDrivePicker, PickedDriveFile } from './googleDocs';
 import { storageKey } from './storageKeys';
+import { quoteYamlString } from './markdownParser';
+import type { FileFrontmatter } from '../types';
 
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 const SPREADSHEET_MIME = 'application/vnd.google-apps.spreadsheet';
@@ -79,7 +81,8 @@ function quoteTab(tab: string): string {
   return `'${tab.replace(/'/g, "''")}'`;
 }
 
-async function sheetsFetch(path: string, init: RequestInit = {}): Promise<any> {
+/** Calls the Sheets API; `T` is the shape of the JSON response the caller reads. */
+async function sheetsFetch<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
   const token = await getAccessToken();
   if (!token) throw new Error('Not connected to Google. Sign in to use the SheetSync spreadsheet.');
   const res = await fetch(`${SHEETS_API}/${path}`, {
@@ -97,33 +100,41 @@ async function sheetsFetch(path: string, init: RequestInit = {}): Promise<any> {
     const text = await res.text();
     if (/SERVICE_DISABLED|has not been used|is disabled/i.test(text)) {
       throw new Error(
-        'The Google Sheets API is turned off for mdlife. Enable it in Google Cloud Console → APIs & Services, then try again.'
+        'The Google Sheets API is turned off for mdlife. Enable it in Google Cloud Console → APIs & Services, then try again.',
       );
     }
     throw new Error(
-      `mdlife can't open this spreadsheet (${res.status}). Choose it again with the Google Picker ("Import SheetSync sheet" under Notes) to grant access.`
+      `mdlife can't open this spreadsheet (${res.status}). Choose it again with the Google Picker ("Import SheetSync sheet" under Notes) to grant access.`,
     );
   }
   if (!res.ok) {
     throw new Error(`Google Sheets error (${res.status}): ${await res.text()}`);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 /** Returns the spreadsheet title and its tab names. Also confirms mdlife can open it. */
-export async function getSpreadsheetInfo(spreadsheetId: string): Promise<{ title: string; tabs: string[] }> {
-  const data = await sheetsFetch(
-    `${spreadsheetId}?includeGridData=false&fields=properties.title,sheets.properties.title`
-  );
+export async function getSpreadsheetInfo(
+  spreadsheetId: string,
+): Promise<{ title: string; tabs: string[] }> {
+  const data = await sheetsFetch<{
+    properties?: { title?: string };
+    sheets?: { properties: { title: string } }[];
+  }>(`${spreadsheetId}?includeGridData=false&fields=properties.title,sheets.properties.title`);
   return {
     title: data.properties?.title || 'Untitled spreadsheet',
-    tabs: (data.sheets || []).map((s: any) => s.properties.title),
+    tabs: (data.sheets || []).map((s) => s.properties.title),
   };
 }
 
 /** Reads every row of a tab, keyed by the header row. */
-export async function readRows(spreadsheetId: string, tab: string): Promise<{ headers: string[]; rows: SheetSyncRow[] }> {
-  const data = await sheetsFetch(`${spreadsheetId}/values/${encodeURIComponent(quoteTab(tab))}`);
+export async function readRows(
+  spreadsheetId: string,
+  tab: string,
+): Promise<{ headers: string[]; rows: SheetSyncRow[] }> {
+  const data = await sheetsFetch<{ values?: string[][] }>(
+    `${spreadsheetId}/values/${encodeURIComponent(quoteTab(tab))}`,
+  );
   const [headers = [], ...body]: string[][] = data.values || [];
   const rows = body.map((cells, i) => ({
     rowNumber: i + 2,
@@ -180,13 +191,21 @@ export function parseLayout(rows: SheetSyncRow[]): SheetSyncLayout {
     if (key === CHANGED_KEY) layout.changedSinceBackup = value.trim().toUpperCase() !== 'FALSE';
     if (key !== LAYOUT_KEY) continue;
     try {
-      const parsed = JSON.parse(value);
+      const parsed: { categories?: unknown; lists?: unknown } = JSON.parse(value);
       if (Array.isArray(parsed.categories)) {
-        layout.categories = parsed.categories.filter((c: any) => c?.sheetName && Array.isArray(c.fields));
+        layout.categories = parsed.categories.filter(
+          (c: Partial<SheetSyncCategory> | null): c is SheetSyncCategory =>
+            Boolean(c?.sheetName && Array.isArray(c.fields)),
+        );
       }
       if (Array.isArray(parsed.lists)) {
         layout.lists = Object.fromEntries(
-          parsed.lists.filter((l: any) => l?.id).map((l: any) => [l.id, Array.isArray(l.items) ? l.items : []])
+          parsed.lists
+            .filter(
+              (l: { id?: string; items?: unknown } | null): l is { id: string; items?: unknown } =>
+                Boolean(l?.id),
+            )
+            .map((l) => [l.id, Array.isArray(l.items) ? l.items : []]),
         );
       }
     } catch {
@@ -210,7 +229,7 @@ export async function markSheetChanged(spreadsheetId: string): Promise<void> {
   if (existing) {
     await sheetsFetch(
       `${spreadsheetId}/values/${encodeURIComponent(`${quoteTab(CONFIG_TAB)}!A${existing.rowNumber}:C${existing.rowNumber}`)}?valueInputOption=USER_ENTERED`,
-      { method: 'PUT', body: JSON.stringify({ values: [values] }) }
+      { method: 'PUT', body: JSON.stringify({ values: [values] }) },
     );
   } else {
     await appendValues(spreadsheetId, CONFIG_TAB, values);
@@ -256,10 +275,14 @@ export function toCell(type: string | undefined, value: string): string | number
   return `'${value}`;
 }
 
-async function appendValues(spreadsheetId: string, tab: string, row: (string | number)[]): Promise<void> {
+async function appendValues(
+  spreadsheetId: string,
+  tab: string,
+  row: (string | number)[],
+): Promise<void> {
   await sheetsFetch(
     `${spreadsheetId}/values/${encodeURIComponent(`${quoteTab(tab)}!A1`)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-    { method: 'POST', body: JSON.stringify({ values: [row] }) }
+    { method: 'POST', body: JSON.stringify({ values: [row] }) },
   );
 }
 
@@ -282,7 +305,7 @@ export async function upsertRow(
   tab: string,
   values: Record<string, string>,
   id?: string,
-  options: UpsertOptions = {}
+  options: UpsertOptions = {},
 ): Promise<string> {
   const { headers, rows } = await readRows(spreadsheetId, tab);
   if (headers.length === 0) throw new Error(`Tab "${tab}" has no header row.`);
@@ -298,13 +321,19 @@ export async function upsertRow(
       : undefined;
 
   if (existing) {
-    const meta: Record<string, string> = { 'Saved At': savedAt, ...(existing.values.ID ? {} : { ID: rowId }) };
+    const meta: Record<string, string> = {
+      'Saved At': savedAt,
+      ...(existing.values.ID ? {} : { ID: rowId }),
+    };
     const data = headers
       .map((h, i) => ({ h, i }))
       .filter(({ h }) => h in meta || (!META_HEADERS.has(h) && h in values))
       .map(({ h, i }) => {
         const a1 = `${columnLetter(i + 1)}${existing.rowNumber}`;
-        return { range: `${quoteTab(tab)}!${a1}:${a1}`, values: [[cell(h, h in meta ? meta[h] : values[h])]] };
+        return {
+          range: `${quoteTab(tab)}!${a1}:${a1}`,
+          values: [[cell(h, h in meta ? meta[h] : values[h])]],
+        };
       });
     await sheetsFetch(`${spreadsheetId}/values:batchUpdate`, {
       method: 'POST',
@@ -312,22 +341,25 @@ export async function upsertRow(
     });
   } else {
     const full: Record<string, string> = { ...values, ID: rowId, 'Saved At': savedAt };
-    await appendValues(spreadsheetId, tab, headers.map((h) => (h in full ? cell(h, full[h]) : '')));
+    await appendValues(
+      spreadsheetId,
+      tab,
+      headers.map((h) => (h in full ? cell(h, full[h]) : '')),
+    );
   }
   return rowId;
 }
 
 /** True for a note created by "Import SheetSync sheet": it shows the spreadsheet instead of markdown. */
-export function getSheetSyncNoteId(frontmatter: Record<string, any>): string | null {
+export function getSheetSyncNoteId(frontmatter: FileFrontmatter): string | null {
   const id = frontmatter.spreadsheet_id;
   return frontmatter.type === 'sheetsync' && id ? String(id) : null;
 }
 
 /** Markdown for a note that opens the given spreadsheet in mdlife's SheetSync view. */
 export function sheetSyncNoteContent(sheet: SheetSyncSpreadsheet): string {
-  const title = sheet.name.replace(/"/g, "'");
   return `---
-title: "${title}"
+title: ${quoteYamlString(sheet.name)}
 category: notes
 type: sheetsync
 spreadsheet_id: ${sheet.id}
