@@ -6,13 +6,6 @@ export type StandardFolder = (typeof STANDARD_FOLDERS)[number];
 
 type ClassifiableFile = Pick<VaultFile, 'folder' | 'frontmatter'>;
 
-/** True when `folder` is exactly `top` or nested below it (`top/...`). Case-insensitive, exact segment match. */
-export const isInFolder = (folder: string | undefined, top: string): boolean => {
-  const f = (folder || '').trim().toLowerCase();
-  const t = top.toLowerCase();
-  return f === t || f.startsWith(`${t}/`);
-};
-
 /**
  * The top-level vault folder a file belongs to.
  * Uses the first path segment of its folder (exact match for standard folders);
@@ -35,5 +28,4 @@ const isKind = (file: ClassifiableFile, kind: StandardFolder) => getTopLevelFold
 export const isGoalFile = (file: ClassifiableFile) => isKind(file, 'goals');
 export const isProjectFile = (file: ClassifiableFile) => isKind(file, 'projects');
 export const isSkillFile = (file: ClassifiableFile) => isKind(file, 'skills');
-export const isNoteFile = (file: ClassifiableFile) => isKind(file, 'notes');
 export const isArchiveFile = (file: ClassifiableFile) => isKind(file, 'archive');

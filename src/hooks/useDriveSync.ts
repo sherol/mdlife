@@ -498,7 +498,6 @@ export function useDriveSync({
     if (!canSync()) return 'queued';
     await flushSaves([]);
     return pendingDeletionsRef.current.includes(entry) ? 'queued' : 'deleted';
-     
   }, [flushSaves, setPendingDeletions]);
 
   /** Drops all queued saves, unsaved flags and pending deletions (Drive wins). */
@@ -642,7 +641,6 @@ export function useDriveSync({
       }
       flushSaves([id]);
       return meta;
-       
     },
     [filesRef, updateFiles, markUnsaved, flushSaves]
   );
@@ -661,7 +659,6 @@ export function useDriveSync({
       docSyncStore.remove(id);
       setConflictFlag(id, false);
       markUnsaved([id]);
-       
     },
     [filesRef, updateFiles, markUnsaved]
   );
@@ -681,7 +678,6 @@ export function useDriveSync({
       setConflictFlag(conflict.fileId, false);
       markUnsaved([conflict.fileId]);
       flushSaves([conflict.fileId]);
-       
     },
     [docConflict, filesRef, updateFiles, markUnsaved, flushSaves]
   );
