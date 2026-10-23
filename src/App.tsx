@@ -607,7 +607,13 @@ export default function App({ forceOffline = false }: AppProps) {
   };
 
   // Import a Google Doc converted to Markdown
-  const handleGoogleDocImported = (importedFile: VaultFile) => {
+  const handleGoogleDocImported = (doc: VaultFile) => {
+    // Never replace an existing note: a clashing name gets -1, -2, ... instead.
+    const base = doc.name.replace(/\.md$/, '');
+    let name = doc.name;
+    for (let n = 1; filesRef.current.some((f) => f.id === `${doc.folder}/${name}`); n++) name = `${base}-${n}.md`;
+    const importedFile: VaultFile = { ...doc, id: `${doc.folder}/${name}`, name, path: `${doc.folder}/${name}` };
+
     updateFiles((prev) => [
       importedFile,
       ...prev.filter((f) => f.id !== importedFile.id),
