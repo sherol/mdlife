@@ -28,6 +28,7 @@ Live: https://sherol.github.io/mdlife (offline demo without Google login: https:
 - **Markdown editor & preview**:
   - Interactive checklists (click a checkbox in the preview to update the source).
   - GitHub-flavored markdown (tables, task lists, strikethrough), code blocks, blockquotes, and a frontmatter badge viewer.
+  - Mermaid diagrams: a ```` ```mermaid ```` code block is drawn as a diagram in the preview (flowcharts, sequence diagrams, Gantt charts, mind maps, …), following light/dark mode. A diagram with a mistake shows its code and Mermaid's error. The Mermaid library loads only when a note with a diagram is opened.
 - **Import / export**:
   - Drag and drop local `.md` files into the sidebar to import them.
   - Download the entire vault as a `.zip` file.
