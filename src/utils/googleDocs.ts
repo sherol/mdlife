@@ -97,6 +97,10 @@ export function loadGooglePickerApi(): Promise<void> {
     script.onerror = () => reject(new Error('Failed to load https://apis.google.com/js/api.js'));
     document.head.appendChild(script);
   });
+  // Don't cache a failure (e.g. a network blip): the next call tries again.
+  pickerLoadPromise.catch(() => {
+    pickerLoadPromise = null;
+  });
 
   return pickerLoadPromise;
 }

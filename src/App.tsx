@@ -13,7 +13,7 @@ import {
   saveBypassedAuth,
   getTemplateForCategory,
 } from './utils/storage';
-import { parseFrontmatter, toggleCheckboxInMarkdown, updateWikiLinks } from './utils/markdownParser';
+import { parseFrontmatter, toggleCheckboxInMarkdown, updateWikiLinks, wikiTargetMatchesFile } from './utils/markdownParser';
 import { initAuth, googleSignIn, logout, subscribeDriveStatus, testDriveConnection, getAccessToken } from './utils/googleAuth';
 import {
   renameFileInDrive,
@@ -50,7 +50,7 @@ import {
   sheetSyncNoteContent,
 } from './utils/sheetSync';
 import { docSyncStore, getLinkedDocId } from './utils/sharedDocs';
-import { TRAILHEAD_ID, TRAILHEAD_LABEL, isTrailheadFile } from './utils/trailhead';
+import { TRAILHEAD_ID, TRAILHEAD_LABEL, TRAILHEAD_NAME, isTrailheadFile } from './utils/trailhead';
 
 interface AppProps {
   forceOffline?: boolean;
@@ -276,13 +276,9 @@ export default function App({ forceOffline = false }: AppProps) {
 
   // Navigate to another file (e.g. from wiki-link or relation card)
   const handleNavigateToFile = (query: string) => {
-    const cleanQuery = query.replace(/^\[\[|\]\]$/g, '').trim().toLowerCase();
-    const found = files.find((f) => {
-      const matchName = f.name.toLowerCase() === cleanQuery || f.name.toLowerCase() === `${cleanQuery}.md`;
-      const matchPath = f.path.toLowerCase() === cleanQuery;
-      const matchTitle = f.frontmatter.title?.toLowerCase() === cleanQuery;
-      return matchName || matchPath || matchTitle;
-    });
+    // Same matching rule the preview uses to mark a [[wiki-link]] as resolved (name, path, with or without .md, or title)
+    const cleanQuery = query.replace(/^\[\[|\]\]$/g, '');
+    const found = files.find((f) => wikiTargetMatchesFile(cleanQuery, f));
 
     if (found) {
       setSelectedFileId(found.id);
@@ -451,7 +447,7 @@ export default function App({ forceOffline = false }: AppProps) {
     const fileToRename = filesRef.current.find((f) => f.id === id);
     if (!fileToRename) return false;
     if (isTrailheadFile(fileToRename)) {
-      setToastNotification({ type: 'info', text: `${TRAILHEAD_LABEL} always keeps its name (README.md).` });
+      setToastNotification({ type: 'info', text: `${TRAILHEAD_LABEL} always keeps its name (${TRAILHEAD_NAME}).` });
       return false;
     }
 
