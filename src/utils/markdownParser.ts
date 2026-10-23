@@ -1,6 +1,29 @@
 import { FileFrontmatter, TaskProgress } from '../types';
 
 /**
+ * Writes a string as a YAML double-quoted scalar, escaping backslashes and double quotes,
+ * so `parseFrontmatter` reads back exactly the same text.
+ */
+export function quoteYamlString(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * Reads a scalar written as `"double quoted"` (unescaping `\"` and `\\`; other backslashes are
+ * kept as-is), `'single quoted'` (unescaping `''`), or plain. Anything else falls back to
+ * trimming stray quote characters from the ends, as before.
+ */
+function unquoteYamlScalar(raw: string): string {
+  if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
+    return raw.slice(1, -1).replace(/\\(["\\])/g, '$1');
+  }
+  if (raw.length >= 2 && raw.startsWith("'") && raw.endsWith("'")) {
+    return raw.slice(1, -1).replace(/''/g, "'");
+  }
+  return raw.replace(/^["']|["']$/g, '');
+}
+
+/**
  * Parses frontmatter between --- and ---
  */
 export function parseFrontmatter(markdown: string): {
@@ -37,7 +60,7 @@ export function parseFrontmatter(markdown: string): {
 
     // Array item e.g. "  - item" or "- item"
     if (trimmed.startsWith('- ') && currentArrayKey) {
-      const val = trimmed.substring(2).trim().replace(/^["']|["']$/g, '');
+      const val = unquoteYamlScalar(trimmed.substring(2).trim());
       currentArray.push(val);
       continue;
     }
@@ -64,11 +87,11 @@ export function parseFrontmatter(markdown: string): {
         const items = rawVal
           .slice(1, -1)
           .split(',')
-          .map((s) => s.trim().replace(/^["']|["']$/g, ''))
+          .map((s) => unquoteYamlScalar(s.trim()))
           .filter(Boolean);
         frontmatter[key] = items;
       } else {
-        let val: any = rawVal.replace(/^["']|["']$/g, '');
+        let val: any = unquoteYamlScalar(rawVal);
         if (val === 'true') val = true;
         else if (val === 'false') val = false;
         else if (!isNaN(Number(val)) && val !== '') val = Number(val);
@@ -110,13 +133,13 @@ export function stringifyWithFrontmatter(
       } else {
         yamlLines.push(`${key}:`);
         for (const item of value) {
-          yamlLines.push(`  - "${item}"`);
+          yamlLines.push(`  - ${quoteYamlString(String(item))}`);
         }
       }
     } else if (typeof value === 'string') {
       // Quote if contains special characters
-      if (value.includes(':') || value.includes('#') || value.includes('[') || value.includes(']')) {
-        yamlLines.push(`${key}: "${value.replace(/"/g, '\\"')}"`);
+      if (/[:#[\]"]/.test(value)) {
+        yamlLines.push(`${key}: ${quoteYamlString(value)}`);
       } else {
         yamlLines.push(`${key}: ${value}`);
       }

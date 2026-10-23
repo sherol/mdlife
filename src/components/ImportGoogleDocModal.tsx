@@ -13,6 +13,7 @@ import { User } from 'firebase/auth';
 import { Modal } from './Modal';
 import { VaultFile, FileCategory } from '../types';
 import { getAccessToken } from '../utils/googleAuth';
+import { quoteYamlString } from '../utils/markdownParser';
 import {
   extractGoogleDocId,
   openGoogleDocsPicker,
@@ -149,7 +150,7 @@ export const ImportGoogleDocModal: React.FC<ImportGoogleDocModalProps> = ({
       const today = new Date().toISOString().split('T')[0];
       const frontmatterContent = [
         '---',
-        `title: "${finalTitle.replace(/"/g, '\\"')}"`,
+        `title: ${quoteYamlString(finalTitle)}`,
         `category: ${targetCategory}`,
         `tags:`,
         `  - gdocs-import`,

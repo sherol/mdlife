@@ -159,7 +159,7 @@ describe('layout and cells', () => {
 
   it('creates a note that points at the spreadsheet', () => {
     const { frontmatter } = parseFrontmatter(sheetSyncNoteContent({ id: '1AbC_d-9', name: 'SheetSync "Tracker"' }));
-    expect(frontmatter.title).toBe("SheetSync 'Tracker'");
+    expect(frontmatter.title).toBe('SheetSync "Tracker"');
     expect(frontmatter.category).toBe('notes');
     expect(getSheetSyncNoteId(frontmatter)).toBe('1AbC_d-9');
     expect(getSheetSyncNoteId({ title: 'plain note' })).toBeNull();

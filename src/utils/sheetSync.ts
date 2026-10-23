@@ -12,6 +12,7 @@
 import { getAccessToken, markTokenExpired } from './googleAuth';
 import { openDrivePicker, PickedDriveFile } from './googleDocs';
 import { storageKey } from './storageKeys';
+import { quoteYamlString } from './markdownParser';
 
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 const SPREADSHEET_MIME = 'application/vnd.google-apps.spreadsheet';
@@ -325,9 +326,8 @@ export function getSheetSyncNoteId(frontmatter: Record<string, any>): string | n
 
 /** Markdown for a note that opens the given spreadsheet in mdlife's SheetSync view. */
 export function sheetSyncNoteContent(sheet: SheetSyncSpreadsheet): string {
-  const title = sheet.name.replace(/"/g, "'");
   return `---
-title: "${title}"
+title: ${quoteYamlString(sheet.name)}
 category: notes
 type: sheetsync
 spreadsheet_id: ${sheet.id}
