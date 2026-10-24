@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   fileExtension,
   folderAllowsAltFormats,
+  formatJsonLosslessly,
+  getFileTaskProgress,
   getFileFormat,
   getTemplateForFormat,
   mimeTypeForFile,
@@ -75,5 +77,33 @@ describe('parseJsonContent', () => {
   it('starter templates are valid', () => {
     expect(parseJsonContent(getTemplateForFormat('json', 'My "Data"')).ok).toBe(true);
     expect(getTemplateForFormat('text', 'Hello')).toBe('Hello\n');
+  });
+});
+
+describe('formatJsonLosslessly', () => {
+  const fmt = (content: string) => formatJsonLosslessly(content, JSON.parse(content));
+
+  it('re-indents JSON when only whitespace changes', () => {
+    expect(fmt('{"a":[1, 2],  "b": " x y "}')).toBe(
+      '{\n  "a": [\n    1,\n    2\n  ],\n  "b": " x y "\n}\n',
+    );
+    expect(fmt('{"s": "quote \\" and \\\\ backslash"}')).not.toBeNull();
+  });
+
+  it('refuses when re-serializing would change the data', () => {
+    expect(fmt('{"id": 12345678901234567890}')).toBeNull(); // precision loss
+    expect(fmt('{"a": 1, "a": 2}')).toBeNull(); // duplicate key
+    expect(fmt('{"n": 1.0}')).toBeNull(); // number spelling
+    expect(fmt('{"n": 1e2}')).toBeNull();
+    expect(fmt('{"s": "\\u00e9"}')).toBeNull(); // escape spelling
+  });
+});
+
+describe('getFileTaskProgress', () => {
+  it('counts tasks in markdown only', () => {
+    const content = '- [ ] a\n- [x] b\n';
+    expect(getFileTaskProgress({ name: 'p.md', content }).total).toBe(2);
+    expect(getFileTaskProgress({ name: 'log.txt', content }).total).toBe(0);
+    expect(getFileTaskProgress({ name: 'd.json', content }).total).toBe(0);
   });
 });

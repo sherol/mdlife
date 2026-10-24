@@ -106,6 +106,9 @@ interface UseDriveSyncOptions {
  * - Otherwise the Drive version wins.
  * - Local files missing from Drive are dropped only when `pruneMissing` (a complete listing) and
  *   they have no unsaved edits and their download didn't fail.
+ * - A kept local file owns its Drive file: a Drive entry for the same driveFileId under another
+ *   path (e.g. "notes.txt.md" now listed as "notes.txt") is skipped, so two local files never
+ *   write to one Drive file.
  */
 export function mergeDriveFiles(
   localFiles: VaultFile[],
@@ -132,6 +135,18 @@ export function mergeDriveFiles(
         mergedMap.set(lf.id, lf);
       }
     }
+  }
+
+  const keptDriveIds = new Map<string, string>();
+  for (const lf of localFiles) {
+    const kept = mergedMap.get(lf.id);
+    if (kept === lf || (kept && unsaved.has(lf.id))) {
+      if (kept.driveFileId) keptDriveIds.set(kept.driveFileId, lf.id);
+    }
+  }
+  for (const df of driveFiles) {
+    const owner = df.driveFileId ? keptDriveIds.get(df.driveFileId) : undefined;
+    if (owner && owner !== df.id && mergedMap.get(df.id) === df) mergedMap.delete(df.id);
   }
 
   return { merged: Array.from(mergedMap.values()), preservedCount };

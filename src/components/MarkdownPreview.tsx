@@ -687,6 +687,7 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
 };
 
 /** Task text rendered inline (bold, code, links and [[WikiLinks]] keep working). */
+const INLINE_TASK_ELEMENTS = ['p', 'strong', 'em', 'del', 'code', 'a', 'br'];
 const inlineTaskComponents: Components = {
   p: ({ children }) => <>{children}</>,
   a: ({ href, children }) => <PreviewLink href={href}>{children}</PreviewLink>,
@@ -696,6 +697,32 @@ const inlineTaskComponents: Components = {
     </code>
   ),
 };
+
+/**
+ * Escapes markdown that would start a block (heading, quote, list, rule) at the start of the
+ * text, so "- [ ] 1. call bank" shows "1. call bank" instead of a nested list.
+ */
+const escapeLeadingBlockSyntax = (text: string) =>
+  text
+    .replace(/^(\d+)([.)])(?=\s|$)/, '$1\\$2') // ordered list "1. "
+    .replace(/^(#{1,6}(?=\s|$)|>|[-*+](?=\s|$))/, '\\$1') // heading, quote, bullet
+    .replace(/^([-*_])(?=(?:\s*\1){2,}\s*$)/, '\\$1'); // thematic break "---" / "***"
+
+/** One task's text; memoized so typing elsewhere doesn't re-parse every task. */
+const TaskText = React.memo<{ text: string }>(({ text }) => (
+  <span className="leading-snug">
+    <ReactMarkdown
+      remarkPlugins={remarkPlugins}
+      components={inlineTaskComponents}
+      urlTransform={previewUrlTransform}
+      allowedElements={INLINE_TASK_ELEMENTS}
+      unwrapDisallowed
+    >
+      {wikiLinksToMarkdown(escapeLeadingBlockSyntax(text))}
+    </ReactMarkdown>
+  </span>
+));
+TaskText.displayName = 'TaskText';
 
 const OpenTasksSection: React.FC<{
   allFiles: VaultFile[];
@@ -755,15 +782,7 @@ const OpenTasksSection: React.FC<{
                       onChange={() => onToggleTaskInFile?.(file.id, task.taskIndex)}
                       className="w-4 h-4 mt-0.5 rounded text-stone-900 border-stone-300 focus:ring-stone-500 cursor-pointer accent-stone-900 shrink-0 disabled:cursor-default"
                     />
-                    <span className="leading-snug">
-                      <ReactMarkdown
-                        remarkPlugins={remarkPlugins}
-                        components={inlineTaskComponents}
-                        urlTransform={previewUrlTransform}
-                      >
-                        {wikiLinksToMarkdown(task.text)}
-                      </ReactMarkdown>
-                    </span>
+                    <TaskText text={task.text} />
                   </li>
                 ))}
               </ul>

@@ -1,5 +1,5 @@
-import { FileFrontmatter } from '../types';
-import { parseFrontmatter } from './markdownParser';
+import { FileFrontmatter, TaskProgress } from '../types';
+import { getTaskProgress, parseFrontmatter } from './markdownParser';
 
 /** How a vault file's content is stored and shown. */
 export type FileFormat = 'markdown' | 'json' | 'text';
@@ -79,6 +79,12 @@ export const fileExtension = (fileName: string): string =>
 export const getFileFrontmatter = (fileName: string, content: string): FileFrontmatter =>
   getFileFormat(fileName) === 'markdown' ? parseFrontmatter(content).frontmatter : {};
 
+const NO_TASKS: TaskProgress = { total: 0, completed: 0, percentage: 0 };
+
+/** Checkbox progress of a file. Only markdown has tasks: "- [ ]" in a JSON / text file is just text. */
+export const getFileTaskProgress = (file: { name: string; content: string }): TaskProgress =>
+  isMarkdownFile(file) ? getTaskProgress(file.content) : NO_TASKS;
+
 /** The starting content of a new JSON or plain-text file. */
 export const getTemplateForFormat = (format: 'json' | 'text', title: string): string =>
   format === 'json' ? `${JSON.stringify({ title }, null, 2)}\n` : `${title}\n`;
@@ -94,3 +100,33 @@ export const parseJsonContent = (
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 };
+
+/** JSON text with all whitespace outside strings removed. */
+const stripJsonWhitespace = (json: string): string => {
+  let out = '';
+  let inString = false;
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+    if (inString) {
+      out += ch;
+      if (ch === '\\') out += json[++i] ?? '';
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') {
+      inString = true;
+      out += ch;
+    } else if (!/\s/.test(ch)) {
+      out += ch;
+    }
+  }
+  return out;
+};
+
+/**
+ * Pretty-printed JSON (2-space indent), or null when re-serializing would change the data
+ * rather than only its whitespace: large numbers losing precision, duplicate keys, number
+ * spellings like 1.0 / 1e2, or string escapes written differently.
+ */
+export const formatJsonLosslessly = (content: string, value: unknown): string | null =>
+  JSON.stringify(value) === stripJsonWhitespace(content)
+    ? `${JSON.stringify(value, null, 2)}\n`
+    : null;

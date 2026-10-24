@@ -25,10 +25,9 @@ import {
   Share2,
 } from 'lucide-react';
 import { VaultFile, FileCategory, TaskProgress } from '../types';
-import { getTaskProgress } from '../utils/markdownParser';
 import { exportSingleFile } from '../utils/storage';
 import { STANDARD_FOLDERS, getTopLevelFolder } from '../utils/fileKinds';
-import { getFileFormat, isMarkdownFile } from '../utils/fileFormats';
+import { getFileFormat, getFileTaskProgress, stripFileExtension } from '../utils/fileFormats';
 import { TRAILHEAD_FOLDER, TRAILHEAD_LABEL, isTrailheadFile } from '../utils/trailhead';
 import { SubdirectoryTree, SubfolderVariant } from './SubdirectoryTree';
 import { QuickSwitcher } from './QuickSwitcher';
@@ -138,8 +137,8 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
 
   const startRenaming = (file: VaultFile) => {
     setEditingFileId(file.id);
-    // JSON / plain-text files are renamed with their extension visible, so it can't be lost.
-    setEditingFileName(isMarkdownFile(file) ? file.name.replace(/\.md$/, '') : file.name);
+    // The extension is added back on save (renaming never changes a file's format).
+    setEditingFileName(stripFileExtension(file.name));
   };
 
   const handleConfirmRename = async (fileId: string) => {
@@ -211,7 +210,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
   // Task progress badges: parse each file once per content change, not on every render
   const progressById = useMemo(() => {
     const map = new Map<string, TaskProgress>();
-    for (const f of files) map.set(f.id, getTaskProgress(f.content));
+    for (const f of files) map.set(f.id, getFileTaskProgress(f));
     return map;
   }, [files]);
 
@@ -305,7 +304,7 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
     const isSelected = file.id === selectedFileId;
     // The Trailhead's start.md (vault home page) can't be renamed or deleted
     const isProtected = isTrailheadFile(file);
-    const progress = progressById.get(file.id) ?? getTaskProgress(file.content);
+    const progress = progressById.get(file.id) ?? getFileTaskProgress(file);
     let title = file.frontmatter.title || file.name.replace(/\.md$/, '');
     if (
       (title.toUpperCase() === 'SKILL' || title.toLowerCase() === 'untitled') &&

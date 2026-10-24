@@ -36,7 +36,7 @@ import {
 } from './utils/googleDrive';
 import { isDriveSyncDisabled } from './utils/storageKeys';
 import {
-  extensionForFormat,
+  fileExtension,
   folderAllowsAltFormats,
   getFileFormat,
   getFileFrontmatter,
@@ -504,14 +504,14 @@ export default function App({ forceOffline = false }: AppProps) {
     // Sanitize filename
     const sanitized = rawNewName.trim().replace(/[/\\]/g, '');
     if (!sanitized) return false;
-    // A JSON / plain-text file renamed without an extension keeps its format.
-    const oldFormat = getFileFormat(fileToRename.name);
-    const cleanName = normalizeFileName(
-      oldFormat !== 'markdown' && !/\.(md|json|txt)$/i.test(sanitized)
-        ? `${sanitized}${extensionForFormat(oldFormat)}`
-        : sanitized,
-      fileToRename.folder,
-    );
+    // Renaming never changes a file's format: the new name always gets the old extension
+    // (typing it is optional). So "notes.txt.md" stays markdown even when renamed to "notes.txt".
+    const ext = fileExtension(fileToRename.name);
+    const base = sanitized.toLowerCase().endsWith(ext)
+      ? sanitized.slice(0, -ext.length).trim()
+      : sanitized;
+    if (!base) return false;
+    const cleanName = `${base}${ext}`;
 
     // If identical, no-op
     if (cleanName === fileToRename.name) {
@@ -590,6 +590,8 @@ export default function App({ forceOffline = false }: AppProps) {
     const linkUpdatedIds: string[] = [];
     const nextFiles = filesRef.current.map((f) => {
       if (f.id === id) return renamedFile;
+      // [[links]] only mean something in markdown; JSON / text content is left untouched
+      if (!isMarkdownFile(f)) return f;
       const updatedContent = updateWikiLinks(f.content, oldName, cleanName);
       if (updatedContent === f.content) return f;
       linkUpdatedIds.push(f.id);

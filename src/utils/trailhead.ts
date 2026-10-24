@@ -128,6 +128,18 @@ const folderRank = (file: VaultFile) => {
   return i === -1 ? FOLDER_ORDER.length : i;
 };
 
+// Open tasks per file object. Edits replace a file's object and leave the others as they are,
+// so while typing only the edited file is scanned again.
+const openTasksCache = new WeakMap<VaultFile, FileOpenTasks['tasks']>();
+const cachedOpenTasks = (file: VaultFile) => {
+  let tasks = openTasksCache.get(file);
+  if (!tasks) {
+    tasks = getOpenTasks(file.content);
+    openTasksCache.set(file, tasks);
+  }
+  return tasks;
+};
+
 /**
  * The unchecked tasks of every markdown file that isn't archived (not in archive/, status not
  * "archived"), for the list on start.md. start.md's own tasks are left out (they're on the page).
@@ -142,7 +154,7 @@ export function collectOpenTasks(files: VaultFile[]): FileOpenTasks[] {
         !isArchiveFile(f) &&
         f.frontmatter.status !== 'archived',
     )
-    .map((file) => ({ file, tasks: getOpenTasks(file.content) }))
+    .map((file) => ({ file, tasks: cachedOpenTasks(file) }))
     .filter((entry) => entry.tasks.length > 0)
     .sort(
       (a, b) => folderRank(a.file) - folderRank(b.file) || a.file.path.localeCompare(b.file.path),
