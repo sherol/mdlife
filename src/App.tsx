@@ -283,11 +283,10 @@ export default function App({ forceOffline = false }: AppProps) {
     });
   }, []);
 
-  // Handle content updates to current file
-  const handleUpdateContent = (newContent: string) => {
-    if (!currentFile) return;
-    const targetId = currentFile.id;
-    const frontmatter = getFileFrontmatter(currentFile.name, newContent);
+  // Write new content into a file (and queue it for Drive sync)
+  const updateFileContent = (target: VaultFile, newContent: string) => {
+    const targetId = target.id;
+    const frontmatter = getFileFrontmatter(target.name, newContent);
 
     updateFiles((prev) =>
       prev.map((f) =>
@@ -296,6 +295,17 @@ export default function App({ forceOffline = false }: AppProps) {
     );
     // Mark as having unsaved local changes pending Drive sync
     markUnsaved([targetId]);
+  };
+
+  const handleUpdateContent = (newContent: string) => {
+    if (currentFile) updateFileContent(currentFile, newContent);
+  };
+
+  // Toggle a task in any file (the open-task list on start.md)
+  const handleToggleTaskInFile = (fileId: string, taskIndex: number) => {
+    const target = filesRef.current.find((f) => f.id === fileId);
+    if (!target) return;
+    updateFileContent(target, toggleCheckboxInMarkdown(target.content, taskIndex));
   };
 
   // Toggle a checkbox in the active file
@@ -1263,6 +1273,7 @@ export default function App({ forceOffline = false }: AppProps) {
                   onChangeContent={handleUpdateContent}
                   onNavigateToFile={handleNavigateToFile}
                   onToggleCheckbox={handleToggleCheckbox}
+                  onToggleTaskInFile={handleToggleTaskInFile}
                   onOpenSkillPlayground={(s) => setSkillForPlayground(s)}
                   onRenameFile={isTrailheadFile(currentFile) ? undefined : handleRenameFile}
                   onSaveToDrive={isMockMode ? undefined : handleRequestSaveFileToDrive}

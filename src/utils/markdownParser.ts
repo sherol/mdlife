@@ -266,6 +266,16 @@ export function getTaskProgress(markdown: string): TaskProgress {
   };
 }
 
+/** The unchecked tasks of a markdown file: their index (as toggleCheckboxInMarkdown counts) and text. */
+export function getOpenTasks(markdown: string): { taskIndex: number; text: string }[] {
+  const { body } = splitFrontmatterBlock(markdown);
+  const tasks: { taskIndex: number; text: string }[] = [];
+  forEachTaskLine(body, ({ taskIndex, checked, match }) => {
+    if (!checked) tasks.push({ taskIndex, text: match[3].replace(/^\][ \t]+/, '').trim() });
+  });
+  return tasks;
+}
+
 /**
  * Toggles the nth checkbox task in the markdown string (same counting rule as
  * getTaskProgress / getTaskLineIndexMap: frontmatter and fenced code are skipped).

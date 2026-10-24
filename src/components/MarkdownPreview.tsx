@@ -22,6 +22,7 @@ import {
   ExternalLink,
   Sparkles,
   Link2,
+  ListTodo,
 } from 'lucide-react';
 import { VaultFile } from '../types';
 import {
@@ -31,6 +32,7 @@ import {
   wikiTargetMatchesFile,
 } from '../utils/markdownParser';
 import { getTopLevelFolder, isSkillFile } from '../utils/fileKinds';
+import { collectOpenTasks, isTrailheadFile } from '../utils/trailhead';
 import { MermaidDiagram } from './MermaidDiagram';
 
 interface MarkdownPreviewProps {
@@ -39,6 +41,8 @@ interface MarkdownPreviewProps {
   onNavigateToFile: (filenameOrPath: string) => void;
   onToggleCheckbox: (index: number) => void;
   onOpenSkillPlayground: (file: VaultFile) => void;
+  /** Toggles a task in another file (the open-task list on start.md). */
+  onToggleTaskInFile?: (fileId: string, taskIndex: number) => void;
 }
 
 /**
@@ -49,6 +53,33 @@ interface MarkdownPreviewProps {
 const previewUrlTransform = (url: string): string => {
   if (/^(wiki|tel):/i.test(url)) return url;
   return defaultUrlTransform(url);
+};
+
+/** Turns [[target|alias]] / [[target]] outside code into `wiki:` links the preview renders. */
+const wikiLinksToMarkdown = (markdown: string): string => {
+  const codeBlockRegex = /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\r\n]*`)/g;
+  return markdown
+    .split(codeBlockRegex)
+    .map((part) => {
+      // If code block or inline code, leave unchanged
+      if (part.startsWith('`') || part.startsWith('~~~')) {
+        return part;
+      }
+      return part.replace(/\[\[([^\]\r\n]+)\]\]/g, (_, inner) => {
+        const pipeIdx = inner.indexOf('|');
+        let target: string;
+        let label: string;
+        if (pipeIdx !== -1) {
+          target = inner.substring(0, pipeIdx).trim();
+          label = inner.substring(pipeIdx + 1).trim();
+        } else {
+          target = inner.trim();
+          label = target;
+        }
+        return `[${label}](wiki:${encodeURIComponent(target)})`;
+      });
+    })
+    .join('');
 };
 
 // Helper to extract plain text string from ReactNode (used for heading IDs)
@@ -357,6 +388,7 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
   onNavigateToFile,
   onToggleCheckbox,
   onOpenSkillPlayground,
+  onToggleTaskInFile,
 }) => {
   const [copied, setCopied] = useState(false);
   const { frontmatter, content } = file;
@@ -404,33 +436,7 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
   };
 
   // Preprocess [[WikiLinks]] in markdown content outside code blocks
-  const processedContent = useMemo(() => {
-    const codeBlockRegex = /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\r\n]*`)/g;
-    const parts = bodyContent.split(codeBlockRegex);
-
-    return parts
-      .map((part) => {
-        // If code block or inline code, leave unchanged
-        if (part.startsWith('`') || part.startsWith('~~~')) {
-          return part;
-        }
-        // Replace [[target|alias]] or [[target]]
-        return part.replace(/\[\[([^\]\r\n]+)\]\]/g, (_, inner) => {
-          const pipeIdx = inner.indexOf('|');
-          let target: string;
-          let label: string;
-          if (pipeIdx !== -1) {
-            target = inner.substring(0, pipeIdx).trim();
-            label = inner.substring(pipeIdx + 1).trim();
-          } else {
-            target = inner.trim();
-            label = target;
-          }
-          return `[${label}](wiki:${encodeURIComponent(target)})`;
-        });
-      })
-      .join('');
-  }, [bodyContent]);
+  const processedContent = useMemo(() => wikiLinksToMarkdown(bodyContent), [bodyContent]);
 
   const renderedMarkdown = useMemo(
     () => (
@@ -627,6 +633,17 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
         <PreviewContext.Provider value={contextValue}>{renderedMarkdown}</PreviewContext.Provider>
       </div>
 
+      {/* start.md: live copy of every open task in the (non-archived) vault */}
+      {isTrailheadFile(file) && (
+        <PreviewContext.Provider value={contextValue}>
+          <OpenTasksSection
+            allFiles={allFiles}
+            onNavigateToFile={onNavigateToFile}
+            onToggleTaskInFile={onToggleTaskInFile}
+          />
+        </PreviewContext.Provider>
+      )}
+
       {/* Backlinks: files that [[link]] to this one */}
       <section
         aria-labelledby="preview-backlinks-heading"
@@ -666,5 +683,94 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
         )}
       </section>
     </div>
+  );
+};
+
+/** Task text rendered inline (bold, code, links and [[WikiLinks]] keep working). */
+const inlineTaskComponents: Components = {
+  p: ({ children }) => <>{children}</>,
+  a: ({ href, children }) => <PreviewLink href={href}>{children}</PreviewLink>,
+  code: ({ children }) => (
+    <code className="px-1 py-0.5 rounded bg-stone-100 text-stone-800 font-mono text-[0.9em]">
+      {children}
+    </code>
+  ),
+};
+
+const OpenTasksSection: React.FC<{
+  allFiles: VaultFile[];
+  onNavigateToFile: (filenameOrPath: string) => void;
+  onToggleTaskInFile?: (fileId: string, taskIndex: number) => void;
+}> = ({ allFiles, onNavigateToFile, onToggleTaskInFile }) => {
+  // Uses the live (not deferred) files, so a task index always matches the current source text.
+  const groups = useMemo(() => collectOpenTasks(allFiles), [allFiles]);
+  const total = groups.reduce((n, g) => n + g.tasks.length, 0);
+
+  return (
+    <section
+      aria-labelledby="preview-open-tasks-heading"
+      className="mt-10 pt-4 border-t border-stone-200"
+    >
+      <h2
+        id="preview-open-tasks-heading"
+        className="flex items-center gap-1.5 text-sm font-bold text-stone-900 mb-1"
+      >
+        <ListTodo className="w-4 h-4 text-orange-600" />
+        Open Tasks Across the Vault ({total})
+      </h2>
+      <p className="text-[11px] text-stone-400 mb-4">
+        Every unchecked box in the vault's markdown files (archived files left out). Checking one
+        here checks it in its file.
+      </p>
+      {groups.length === 0 ? (
+        <p className="text-xs text-stone-400 italic">No open tasks. Nice work!</p>
+      ) : (
+        <div className="space-y-5">
+          {groups.map(({ file, tasks }) => (
+            <div key={file.id}>
+              <h3 className="text-sm font-semibold text-stone-900 mb-1.5">
+                <button
+                  type="button"
+                  onClick={() => onNavigateToFile(file.path)}
+                  title={`Open ${file.path}`}
+                  className="inline-flex items-baseline gap-2 text-left hover:underline cursor-pointer"
+                >
+                  <span>{file.frontmatter.title || file.name}</span>
+                  <span className="text-[11px] font-mono font-normal text-stone-400">
+                    {file.path}
+                  </span>
+                </button>
+              </h3>
+              <ul className="space-y-1">
+                {tasks.map((task) => (
+                  <li
+                    key={task.taskIndex}
+                    className="flex items-start gap-2 text-sm text-stone-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={false}
+                      disabled={!onToggleTaskInFile}
+                      aria-label={`Mark "${task.text}" in ${file.name} as done`}
+                      onChange={() => onToggleTaskInFile?.(file.id, task.taskIndex)}
+                      className="w-4 h-4 mt-0.5 rounded text-stone-900 border-stone-300 focus:ring-stone-500 cursor-pointer accent-stone-900 shrink-0 disabled:cursor-default"
+                    />
+                    <span className="leading-snug">
+                      <ReactMarkdown
+                        remarkPlugins={remarkPlugins}
+                        components={inlineTaskComponents}
+                        urlTransform={previewUrlTransform}
+                      >
+                        {wikiLinksToMarkdown(task.text)}
+                      </ReactMarkdown>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 };

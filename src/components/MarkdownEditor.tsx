@@ -54,6 +54,8 @@ interface MarkdownEditorProps {
   onChangeContent: (newContent: string) => void;
   onNavigateToFile: (filenameOrPath: string) => void;
   onToggleCheckbox: (index: number) => void;
+  /** Toggles a task in another file (the open-task list on start.md). */
+  onToggleTaskInFile?: (fileId: string, taskIndex: number) => void;
   onOpenSkillPlayground: (file: VaultFile) => void;
   onRenameFile?: (fileId: string, newFileName: string) => Promise<boolean> | boolean;
   onSaveToDrive?: (file: VaultFile) => void;
@@ -78,6 +80,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   onChangeContent,
   onNavigateToFile,
   onToggleCheckbox,
+  onToggleTaskInFile,
   onOpenSkillPlayground,
   onRenameFile,
   onSaveToDrive,
@@ -1139,6 +1142,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 allFiles={allFiles}
                 onNavigateToFile={onNavigateToFile}
                 onToggleCheckbox={onToggleCheckbox}
+                onToggleTaskInFile={onToggleTaskInFile}
                 onOpenSkillPlayground={onOpenSkillPlayground}
               />
             )}
