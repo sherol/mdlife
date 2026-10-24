@@ -2,6 +2,7 @@ import React from 'react';
 import { Bot, Sparkles, Zap, Edit3, Plus, Cpu } from 'lucide-react';
 import { VaultFile } from '../types';
 import { isProjectFile, isSkillFile } from '../utils/fileKinds';
+import { isMarkdownFile } from '../utils/fileFormats';
 
 interface AgentSkillsLabProps {
   files: VaultFile[];
@@ -19,7 +20,7 @@ export const AgentSkillsLab: React.FC<AgentSkillsLabProps> = ({
   onLoadStarterSkills,
 }) => {
   const skills = files.filter(isSkillFile);
-  const projects = files.filter(isProjectFile);
+  const projects = files.filter((f) => isProjectFile(f) && isMarkdownFile(f));
 
   return (
     <div className="flex-1 overflow-y-auto bg-stone-50/50 p-6 md:p-8">

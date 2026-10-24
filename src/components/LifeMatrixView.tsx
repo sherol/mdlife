@@ -3,6 +3,7 @@ import { Target, Rocket, Bot, Plus, Calendar, Layers, ChevronRight } from 'lucid
 import { VaultFile } from '../types';
 import { getTaskProgress } from '../utils/markdownParser';
 import { isGoalFile, isProjectFile, isSkillFile } from '../utils/fileKinds';
+import { isMarkdownFile } from '../utils/fileFormats';
 
 interface LifeMatrixViewProps {
   files: VaultFile[];
@@ -26,7 +27,8 @@ export const LifeMatrixView: React.FC<LifeMatrixViewProps> = ({
 }) => {
   const { goals, projects, skills, progressById } = useMemo(() => {
     const goals = files.filter(isGoalFile);
-    const projects = files.filter(isProjectFile);
+    // JSON / text files in a project folder are attachments, not project notes
+    const projects = files.filter((f) => isProjectFile(f) && isMarkdownFile(f));
     const skills = files.filter(isSkillFile);
     const progressById = new Map(
       [...goals, ...projects].map((f) => [f.id, getTaskProgress(f.content)] as const),

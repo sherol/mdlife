@@ -20,7 +20,7 @@ import {
 import { User } from 'firebase/auth';
 import { VaultFile, ActiveTab, DriveConnectionStatus } from '../types';
 import { exportVaultAsZip } from '../utils/storage';
-import { getTaskProgress } from '../utils/markdownParser';
+import { getFileTaskProgress, isMarkdownFile } from '../utils/fileFormats';
 import { SQUIRREL_FAVICON_DATA_URI } from '../utils/favicon';
 import { isArchiveFile, isGoalFile, isProjectFile, isSkillFile } from '../utils/fileKinds';
 import { ThemeToggle } from './ThemeToggle';
@@ -85,13 +85,14 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
     let totalTasks = 0;
     let completedTasks = 0;
     for (const f of files) {
-      const progress = getTaskProgress(f.content);
+      const progress = getFileTaskProgress(f);
       totalTasks += progress.total;
       completedTasks += progress.completed;
     }
     return {
       goalsCount: files.filter(isGoalFile).length,
-      projectsCount: files.filter(isProjectFile).length,
+      // Project notes (markdown); JSON / text files in a project are attachments, not projects
+      projectsCount: files.filter((f) => isProjectFile(f) && isMarkdownFile(f)).length,
       skillsCount: files.filter(isSkillFile).length,
       archiveCount: files.filter(isArchiveFile).length,
       totalTasks,

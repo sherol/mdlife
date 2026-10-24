@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight, Wand2 } from 'lucide-react';
-import { parseJsonContent } from '../utils/fileFormats';
+import { formatJsonLosslessly, parseJsonContent } from '../utils/fileFormats';
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
@@ -91,7 +91,11 @@ interface JsonViewerProps {
 
 /** Read-only tree view of a JSON file, with the parse error when the JSON is invalid. */
 export const JsonViewer: React.FC<JsonViewerProps> = ({ content, onFormat }) => {
-  const parsed = parseJsonContent(content);
+  // Parse (and pre-format) once per content change, not on every render.
+  const { parsed, formatted } = useMemo(() => {
+    const parsed = parseJsonContent(content);
+    return { parsed, formatted: parsed.ok ? formatJsonLosslessly(content, parsed.value) : null };
+  }, [content]);
 
   if (!parsed.ok) {
     return (
@@ -110,16 +114,20 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({ content, onFormat }) => 
     );
   }
 
-  const formatted = `${JSON.stringify(parsed.value, null, 2)}\n`;
-
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6">
       {onFormat && formatted !== content && (
         <button
           type="button"
           id="btn-json-format"
-          onClick={() => onFormat(formatted)}
-          className="mb-3 inline-flex items-center gap-1.5 px-2.5 py-1 bg-white hover:bg-stone-100 text-stone-700 border border-stone-300 rounded font-medium text-xs transition-colors cursor-pointer"
+          disabled={formatted === null}
+          onClick={() => formatted !== null && onFormat(formatted)}
+          title={
+            formatted === null
+              ? 'Formatting would change the data (large numbers, duplicate keys, number notation or escapes), so it is turned off for this file'
+              : 'Re-indent this JSON (2 spaces)'
+          }
+          className="mb-3 inline-flex items-center gap-1.5 px-2.5 py-1 bg-white hover:bg-stone-100 text-stone-700 border border-stone-300 rounded font-medium text-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
         >
           <Wand2 className="w-3 h-3" />
           <span>Format JSON</span>

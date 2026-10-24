@@ -35,8 +35,46 @@ import { parseFrontmatter, stringifyWithFrontmatter } from '../utils/markdownPar
 import { getTodayYYMMDD } from '../utils/date';
 import { expandTodayTokens } from '../utils/expandToday';
 import { isProjectFile } from '../utils/fileKinds';
-import { fileExtension, getFileFormat, stripFileExtension } from '../utils/fileFormats';
+import { FileFormat, fileExtension, getFileFormat, stripFileExtension } from '../utils/fileFormats';
 import { JsonViewer } from './JsonViewer';
+
+/** Editor labels for each file format. */
+const FORMAT_UI: Record<
+  FileFormat,
+  {
+    source: string;
+    sourceName: string;
+    placeholder: string;
+    preview: string;
+    previewHint: string;
+    footer: string[];
+  }
+> = {
+  markdown: {
+    source: 'Source Markdown (YAML Frontmatter + Content)',
+    sourceName: 'Markdown',
+    placeholder: 'Write markdown here... (type @today for date)',
+    preview: 'Rendered Preview',
+    previewHint: 'Click task checkboxes to toggle',
+    footer: ['Markdown GFM', 'YAML Frontmatter'],
+  },
+  json: {
+    source: 'Source JSON',
+    sourceName: 'JSON',
+    placeholder: 'Write JSON here...',
+    preview: 'JSON Viewer',
+    previewHint: 'Click a node to expand or collapse',
+    footer: ['JSON'],
+  },
+  text: {
+    source: 'Plain Text',
+    sourceName: 'Text',
+    placeholder: 'Write plain text here...',
+    preview: 'Plain Text View',
+    previewHint: '',
+    footer: ['Plain Text'],
+  },
+};
 
 const parseTags = (raw: string): string[] =>
   Array.from(
@@ -187,6 +225,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const isProject = isProjectFile(file);
   const format = getFileFormat(file.name);
   const isMarkdown = format === 'markdown';
+  const ui = FORMAT_UI[format];
 
   // Insert markdown snippet at current cursor or selection
   // Only record while the textarea is focused: during/after blur some browsers report a
@@ -1056,13 +1095,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                   )}
                 </div>
               )}
-              <span className="hidden sm:inline">
-                {format === 'json'
-                  ? 'Source JSON'
-                  : format === 'text'
-                    ? 'Plain Text'
-                    : 'Source Markdown (YAML Frontmatter + Content)'}
-              </span>
+              <span className="hidden sm:inline">{ui.source}</span>
             </div>
             {sharedDoc?.hasConflict && (
               <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800">
@@ -1095,15 +1128,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               onMouseUp={rememberSelection}
               onScroll={rememberSelection}
               spellCheck={false}
-              aria-label={`${format === 'json' ? 'JSON' : format === 'text' ? 'Text' : 'Markdown'} source of ${file.path}`}
+              aria-label={`${ui.sourceName} source of ${file.path}`}
               aria-describedby="editor-keyboard-hint"
-              placeholder={
-                format === 'json'
-                  ? 'Write JSON here...'
-                  : format === 'text'
-                    ? 'Write plain text here...'
-                    : 'Write markdown here... (type @today for date)'
-              }
+              placeholder={ui.placeholder}
               className="flex-1 p-4 md:p-6 font-mono text-xs md:text-sm text-stone-900 bg-transparent resize-none focus:outline-hidden leading-relaxed"
             />
           </div>
@@ -1113,20 +1140,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         {(viewMode === 'preview' || viewMode === 'split') && (
           <div className="flex-1 flex flex-col h-full bg-white overflow-hidden">
             <div className="px-4 py-1.5 bg-stone-100/60 border-b border-stone-200 text-[11px] text-stone-500 flex items-center justify-between">
-              <span>
-                {format === 'json'
-                  ? 'JSON Viewer'
-                  : format === 'text'
-                    ? 'Plain Text View'
-                    : 'Rendered Preview'}
-              </span>
-              <span className="text-[10px] text-stone-400">
-                {format === 'json'
-                  ? 'Click a node to expand or collapse'
-                  : format === 'text'
-                    ? ''
-                    : 'Click task checkboxes to toggle'}
-              </span>
+              <span>{ui.preview}</span>
+              <span className="text-[10px] text-stone-400">{ui.previewHint}</span>
             </div>
             {format === 'json' ? (
               <JsonViewer content={file.content} onFormat={onChangeContent} />
@@ -1166,17 +1181,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               : 'Tab indents · Esc then Tab leaves the editor'}
           </span>
           <span className="hidden md:inline">•</span>
-          {format === 'json' ? (
-            <span>JSON</span>
-          ) : format === 'text' ? (
-            <span>Plain Text</span>
-          ) : (
-            <>
-              <span>Markdown GFM</span>
-              <span>•</span>
-              <span>YAML Frontmatter</span>
-            </>
-          )}
+          <span>{ui.footer.join(' • ')}</span>
         </div>
       </div>
     </div>

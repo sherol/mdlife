@@ -478,10 +478,7 @@ export function renameFileInDrive(
   newFileName: string,
   driveFileId?: string,
 ): Promise<{ renamed: boolean; fileId?: string; modifiedTime?: string }> {
-  const cleanNewName =
-    getFileFormat(newFileName) === 'markdown' && !newFileName.endsWith('.md')
-      ? `${newFileName}.md`
-      : newFileName;
+  const cleanNewName = driveFileName(newFileName);
   const cleanOldName = driveFileName(oldFileName);
 
   const patchName = async (fileId: string) => {
