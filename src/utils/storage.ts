@@ -5,6 +5,7 @@ import { VaultFile, FileCategory, PendingDriveDeletion } from '../types';
 import { getInitialVaultFiles } from '../data/initialVault';
 import { stringifyWithFrontmatter } from './markdownParser';
 import { storageKey } from './storageKeys';
+import { mimeTypeForFile, normalizeFileName } from './fileFormats';
 
 const VAULT_STORAGE_KEY = 'md_life_vault_v1';
 const UNSAVED_IDS_KEY = 'md_life_vault_unsaved_ids';
@@ -167,11 +168,11 @@ export function clearAllVaultStorage(): void {
  * Downloads a single markdown file directly in browser
  */
 export function exportSingleFile(file: VaultFile): void {
-  const blob = new Blob([file.content], { type: 'text/markdown;charset=utf-8' });
+  const blob = new Blob([file.content], { type: `${mimeTypeForFile(file.name)};charset=utf-8` });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = file.name.endsWith('.md') ? file.name : `${file.name}.md`;
+  a.download = normalizeFileName(file.name, file.folder);
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

@@ -43,6 +43,7 @@ import {
   flushScheduledVaultSave,
 } from '../utils/storage';
 import { getErrorMessage } from '../utils/errors';
+import { fileExtension, getFileFrontmatter, stripFileExtension } from '../utils/fileFormats';
 
 const AUTOSAVE_DELAY_MS = 1200;
 /** How often an open shared note checks its Google Doc for the other person's edits. */
@@ -288,11 +289,12 @@ export function useDriveSync({
   /** Keeps the local edits, saves Drive's newer version as a sibling "<name> (conflict).md". */
   const handleConflict = async (file: VaultFile, err: DriveConflictError) => {
     const remote = await downloadDriveFile(err.driveFileId);
-    const baseName = file.name.replace(/\.md$/i, '');
+    const baseName = stripFileExtension(file.name);
+    const ext = fileExtension(file.name);
     const existingIds = new Set(filesRef.current.map((f) => f.id));
-    let copyName = `${baseName} (conflict).md`;
+    let copyName = `${baseName} (conflict)${ext}`;
     for (let n = 2; existingIds.has(`${file.folder}/${copyName}`); n++) {
-      copyName = `${baseName} (conflict ${n}).md`;
+      copyName = `${baseName} (conflict ${n})${ext}`;
     }
     const copyPath = `${file.folder}/${copyName}`;
     const now = Date.now();
@@ -302,7 +304,7 @@ export function useDriveSync({
       path: copyPath,
       folder: file.folder,
       content: remote.content,
-      frontmatter: parseFrontmatter(remote.content).frontmatter,
+      frontmatter: getFileFrontmatter(copyName, remote.content),
       createdAt: now,
       updatedAt: now,
     };

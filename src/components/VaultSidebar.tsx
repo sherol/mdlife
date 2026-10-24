@@ -4,6 +4,7 @@ import {
   Footprints,
   FolderOpen,
   FileText,
+  FileJson,
   Target,
   Rocket,
   Bot,
@@ -27,6 +28,7 @@ import { VaultFile, FileCategory, TaskProgress } from '../types';
 import { getTaskProgress } from '../utils/markdownParser';
 import { exportSingleFile } from '../utils/storage';
 import { STANDARD_FOLDERS, getTopLevelFolder } from '../utils/fileKinds';
+import { getFileFormat, isMarkdownFile } from '../utils/fileFormats';
 import { TRAILHEAD_FOLDER, TRAILHEAD_LABEL, isTrailheadFile } from '../utils/trailhead';
 import { SubdirectoryTree, SubfolderVariant } from './SubdirectoryTree';
 import { QuickSwitcher } from './QuickSwitcher';
@@ -136,7 +138,8 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
 
   const startRenaming = (file: VaultFile) => {
     setEditingFileId(file.id);
-    setEditingFileName(file.name.replace(/\.md$/, ''));
+    // JSON / plain-text files are renamed with their extension visible, so it can't be lost.
+    setEditingFileName(isMarkdownFile(file) ? file.name.replace(/\.md$/, '') : file.name);
   };
 
   const handleConfirmRename = async (fileId: string) => {
@@ -388,7 +391,13 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
           className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
         >
           <span className={isSelected ? 'text-white' : ''}>
-            {getCategoryIcon(getTopLevelCategory(file))}
+            {getFileFormat(file.name) === 'json' ? (
+              <FileJson className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            ) : getFileFormat(file.name) === 'text' ? (
+              <FileText className="w-3.5 h-3.5 text-stone-500 shrink-0" />
+            ) : (
+              getCategoryIcon(getTopLevelCategory(file))
+            )}
           </span>
 
           <span className="truncate flex-1">

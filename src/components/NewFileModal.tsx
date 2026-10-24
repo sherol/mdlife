@@ -10,9 +10,23 @@ import {
   Calendar,
   Folder,
   Sheet,
+  FileJson,
+  FileCode,
 } from 'lucide-react';
 import { FileCategory } from '../types';
 import { Modal } from './Modal';
+import {
+  FileFormat,
+  FORMAT_LABELS,
+  extensionForFormat,
+  stripFileExtension,
+} from '../utils/fileFormats';
+
+const FORMAT_OPTIONS: { format: FileFormat; icon: React.ReactNode }[] = [
+  { format: 'markdown', icon: <FileCode className="w-3.5 h-3.5" /> },
+  { format: 'json', icon: <FileJson className="w-3.5 h-3.5" /> },
+  { format: 'text', icon: <FileText className="w-3.5 h-3.5" /> },
+];
 
 const slugify = (val: string) =>
   val
@@ -123,6 +137,7 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
   const [customFolderName, setCustomFolderName] = useState<string>(initState.custom);
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
+  const [format, setFormat] = useState<FileFormat>('markdown');
   const titleId = useId();
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -150,11 +165,22 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
     ),
   );
 
+  // JSON and plain-text files can only be created inside Projects.
+  const allowsAltFormats = !isCustomFolder && category === 'projects';
+  const effectiveFormat: FileFormat = allowsAltFormats ? format : 'markdown';
+  const extension = extensionForFormat(effectiveFormat);
+  const finalFilename = `${stripFileExtension(slug.trim()) || 'untitled'}${extension}`;
+
   const handleTitleChange = (val: string) => {
     setTitle(val);
-    // Auto-generate clean markdown slug
+    // Auto-generate clean filename slug
     const clean = slugify(val);
-    setSlug(clean ? `${clean}.md` : '');
+    setSlug(clean ? `${clean}${extension}` : '');
+  };
+
+  const handleFormatChange = (next: FileFormat) => {
+    setFormat(next);
+    setSlug((s) => (s.trim() ? `${stripFileExtension(s.trim())}${extensionForFormat(next)}` : s));
   };
 
   const handleProjectSubfolderChange = (val: string) => {
@@ -190,8 +216,7 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const finalFolder = computeFinalFolder();
-    const finalFilename = slug.endsWith('.md') ? slug : `${slug || 'untitled'}.md`;
-    const finalTitle = title.trim() || slug.replace(/\.md$/, '');
+    const finalTitle = title.trim() || stripFileExtension(slug);
 
     if (!finalFolder || !finalFilename) return;
     onCreateFile(finalFolder, finalFilename, finalTitle);
@@ -216,7 +241,7 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
           </div>
           <div>
             <h3 id={titleId} className="font-bold text-stone-900 text-sm">
-              Create Markdown File
+              Create {FORMAT_LABELS[effectiveFormat]} File
             </h3>
             <p className="text-[11px] text-stone-500">
               Organize under structured vault folders and sub-directories
@@ -435,6 +460,38 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
                   ))}
                 </div>
               )}
+              <div className="flex items-center gap-2 pt-1">
+                <span id={`${titleId}-format`} className="text-[10px] text-blue-900 font-semibold">
+                  File type:
+                </span>
+                <div
+                  role="radiogroup"
+                  aria-labelledby={`${titleId}-format`}
+                  className="flex items-center gap-1"
+                >
+                  {FORMAT_OPTIONS.map(({ format: f, icon }) => (
+                    <button
+                      key={f}
+                      type="button"
+                      role="radio"
+                      aria-checked={format === f}
+                      id={`btn-new-file-format-${f}`}
+                      onClick={() => handleFormatChange(f)}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] transition-colors cursor-pointer ${
+                        format === f
+                          ? 'bg-blue-600 text-white font-medium'
+                          : 'bg-white text-blue-800 border border-blue-200 hover:bg-blue-100'
+                      }`}
+                    >
+                      {icon}
+                      <span>
+                        {FORMAT_LABELS[f]}{' '}
+                        <span className="font-mono opacity-75">{extensionForFormat(f)}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
@@ -482,7 +539,7 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
             htmlFor={`${titleId}-filename`}
             className="block text-stone-700 font-semibold mb-1"
           >
-            Markdown Filename (.md)
+            Filename ({extension})
           </label>
           <div className="flex items-center gap-1 text-stone-500 font-mono">
             <span className="text-[11px] bg-stone-100 px-2 py-2 rounded-lg border border-stone-200 text-stone-600 truncate max-w-[180px]">
@@ -492,15 +549,14 @@ export const NewFileModal: React.FC<NewFileModalProps> = ({
               id={`${titleId}-filename`}
               type="text"
               required
-              placeholder="filename.md"
+              placeholder={`filename${extension}`}
               value={slug}
               onChange={(e) => setSlug(e.target.value)}
               className="flex-1 p-2 bg-stone-50 border border-stone-200 rounded-lg text-xs font-mono text-stone-900 focus:bg-white focus:border-stone-400 focus:outline-hidden"
             />
           </div>
           <p className="text-[10px] text-stone-400 mt-1 font-mono truncate">
-            Full vault path: /{finalFolderPreview}/
-            {slug ? (slug.endsWith('.md') ? slug : `${slug}.md`) : 'untitled.md'}
+            Full vault path: /{finalFolderPreview}/{finalFilename}
           </p>
         </div>
 
