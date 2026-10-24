@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  collectOpenTasks,
   createTrailheadFile,
   ensureTrailhead,
   LEGACY_TRAILHEAD_ID,
@@ -7,6 +8,18 @@ import {
 } from '../trailhead';
 import { getInitialVaultFiles } from '../../data/initialVault';
 import { VaultFile } from '../../types';
+import { parseFrontmatter, toggleCheckboxInMarkdown } from '../markdownParser';
+
+const note = (path: string, content: string): VaultFile => ({
+  id: path,
+  name: path.split('/').pop()!,
+  path,
+  folder: path.split('/').slice(0, -1).join('/'),
+  content,
+  frontmatter: parseFrontmatter(content).frontmatter,
+  createdAt: 0,
+  updatedAt: 0,
+});
 
 const legacyReadme = (
   content = '---\ntitle: Trailhead\ncategory: trailhead\n---\n# My home\n',
@@ -74,5 +87,36 @@ describe('Trailhead (trailhead/start.md)', () => {
     const res = ensureTrailhead([own]);
     expect(res.files.map((f) => f.id)).toEqual([TRAILHEAD_ID, LEGACY_TRAILHEAD_ID]);
     expect(res.removedLegacy).toBeUndefined();
+  });
+});
+
+describe('collectOpenTasks (open-task list on start.md)', () => {
+  const files = [
+    createTrailheadFile(),
+    note('notes/log.md', '# Log\n- [ ] note task\n'),
+    note(
+      'goals/fit.md',
+      '---\ntitle: Get Fit\n---\n- [x] done\n- [ ] run **5k**\n```\n- [ ] in code\n```\n* [ ] swim\n',
+    ),
+    note('archive/2025/old.md', '- [ ] archived folder\n'),
+    note('projects/p/p.md', '---\nstatus: archived\n---\n- [ ] archived status\n'),
+    note('projects/p/data.txt', '- [ ] not markdown\n'),
+    note('skills/none.md', '- [x] all done\n'),
+  ];
+
+  it('lists unchecked tasks of non-archived markdown files, in folder order', () => {
+    const groups = collectOpenTasks(files);
+    expect(groups.map((g) => g.file.path)).toEqual(['goals/fit.md', 'notes/log.md']);
+    expect(groups[0].tasks).toEqual([
+      { taskIndex: 1, text: 'run **5k**' },
+      { taskIndex: 2, text: 'swim' },
+    ]);
+  });
+
+  it('task indexes toggle the matching line in the source file', () => {
+    const [fit] = collectOpenTasks(files);
+    const toggled = toggleCheckboxInMarkdown(fit.file.content, fit.tasks[1].taskIndex);
+    expect(toggled).toContain('* [x] swim');
+    expect(toggled).toContain('- [ ] run **5k**');
   });
 });

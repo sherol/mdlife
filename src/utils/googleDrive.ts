@@ -1,6 +1,11 @@
 import { FileCategory, VaultFile } from '../types';
 import { getAccessToken, markTokenExpired } from './googleAuth';
-import { parseFrontmatter } from './markdownParser';
+import {
+  folderAllowsAltFormats,
+  getFileFormat,
+  getFileFrontmatter,
+  mimeTypeForFile,
+} from './fileFormats';
 import { isDriveSyncDisabled } from './storageKeys';
 
 const ROOT_FOLDER_NAME = 'Markdown Life Vault';
@@ -281,13 +286,26 @@ async function findVaultFolderId(folderPath: string): Promise<string | null> {
   return currentParentId;
 }
 
-/** Lists non-trashed files in `folderId` whose name is exactly `<base>.md` or `<base>`. */
+/**
+ * The name a vault file has in Drive: markdown files always end in ".md";
+ * JSON and plain-text files keep their own name.
+ */
+const driveFileName = (fileName: string) =>
+  getFileFormat(fileName) === 'markdown' ? `${fileName.replace(/\.md$/i, '')}.md` : fileName;
+
+/**
+ * Lists non-trashed files in `folderId` named exactly `fileName`
+ * (for markdown also `<base>` without the ".md" extension).
+ */
 async function findFilesByExactName(folderId: string, fileName: string) {
-  const baseName = fileName.replace(/\.md$/i, '');
+  const name = driveFileName(fileName);
+  const nameQuery =
+    getFileFormat(name) === 'markdown'
+      ? `(name = '${escapeDriveQuery(name)}' or name = '${escapeDriveQuery(name.replace(/\.md$/i, ''))}')`
+      : `name = '${escapeDriveQuery(name)}'`;
   const q =
     `'${escapeDriveQuery(folderId)}' in parents and trashed = false and ` +
-    `mimeType != '${FOLDER_MIME}' and ` +
-    `(name = '${escapeDriveQuery(`${baseName}.md`)}' or name = '${escapeDriveQuery(baseName)}')`;
+    `mimeType != '${FOLDER_MIME}' and ${nameQuery}`;
   return listAll<{ id: string; name: string; modifiedTime?: string }>(q, 'id,name,modifiedTime');
 }
 
@@ -319,29 +337,34 @@ async function getFileMetadata(
 }
 
 /** Replaces a Drive file's content. */
-async function uploadContent(fileId: string, content: string): Promise<{ modifiedTime?: string }> {
+async function uploadContent(
+  fileId: string,
+  content: string,
+  fileName: string,
+): Promise<{ modifiedTime?: string }> {
   const res = await driveFetch(
     `${UPLOAD_API}files/${encodeURIComponent(fileId)}?uploadType=media&fields=id,modifiedTime`,
     {
       method: 'PATCH',
-      headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
+      headers: { 'Content-Type': `${mimeTypeForFile(fileName)}; charset=utf-8` },
       body: content,
     },
   );
   return res.json();
 }
 
-/** Creates a markdown file with content in a single multipart request (no empty orphans on failure). */
+/** Creates a vault file with content in a single multipart request (no empty orphans on failure). */
 async function createFileWithContent(
   fileName: string,
   parentId: string,
   content: string,
 ): Promise<{ id: string; modifiedTime?: string }> {
   const boundary = `mdlife-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  const metadata = { name: fileName, parents: [parentId], mimeType: 'text/markdown' };
+  const mimeType = mimeTypeForFile(fileName);
+  const metadata = { name: fileName, parents: [parentId], mimeType };
   const body =
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
-    `--${boundary}\r\nContent-Type: text/markdown; charset=UTF-8\r\n\r\n${content}\r\n` +
+    `--${boundary}\r\nContent-Type: ${mimeType}; charset=UTF-8\r\n\r\n${content}\r\n` +
     `--${boundary}--`;
   const res = await driveFetch(`${UPLOAD_API}files?uploadType=multipart&fields=id,modifiedTime`, {
     method: 'POST',
@@ -361,7 +384,7 @@ export async function downloadDriveFile(
 }
 
 /**
- * Saves or updates a single markdown file in Google Drive.
+ * Saves or updates a single vault file in Google Drive.
  *
  * - With a known driveFileId: checks the remote modifiedTime first and throws DriveConflictError
  *   (without writing) if Drive has a newer version than the one we last saw.
@@ -379,7 +402,7 @@ export function saveFileToDrive(
         if (isRemoteNewer(meta.modifiedTime, file.driveModifiedTime)) {
           throw new DriveConflictError(file.name, file.driveFileId, meta.modifiedTime!);
         }
-        const updated = await uploadContent(file.driveFileId, file.content);
+        const updated = await uploadContent(file.driveFileId, file.content, file.name);
         return { fileId: file.driveFileId, isNew: false, modifiedTime: updated.modifiedTime };
       }
       // File was deleted/trashed in Drive: fall through and recreate it in its folder.
@@ -388,13 +411,12 @@ export function saveFileToDrive(
     const resolvedFolderId =
       targetFolderId || (await resolveDriveFolderId(file.folder, await getVaultRootId()));
 
-    const baseName = file.name.replace(/\.md$/i, '');
-    const fileName = `${baseName}.md`;
+    const fileName = driveFileName(file.name);
     const existing = await findFilesByExactName(resolvedFolderId, fileName);
 
     if (existing.length > 0) {
       const existingId = existing[0].id;
-      const updated = await uploadContent(existingId, file.content);
+      const updated = await uploadContent(existingId, file.content, fileName);
       return { fileId: existingId, isNew: false, modifiedTime: updated.modifiedTime };
     }
 
@@ -419,7 +441,7 @@ export function deleteFileFromDrive(
   fileName: string,
   driveFileId?: string,
 ): Promise<boolean> {
-  const cleanName = `${fileName.replace(/\.md$/i, '')}.md`;
+  const cleanName = driveFileName(fileName);
   return withDriveFileLock(`${folderName}/${cleanName}`, async () => {
     if (driveFileId) {
       try {
@@ -456,8 +478,11 @@ export function renameFileInDrive(
   newFileName: string,
   driveFileId?: string,
 ): Promise<{ renamed: boolean; fileId?: string; modifiedTime?: string }> {
-  const cleanNewName = newFileName.endsWith('.md') ? newFileName : `${newFileName}.md`;
-  const cleanOldName = `${oldFileName.replace(/\.md$/i, '')}.md`;
+  const cleanNewName =
+    getFileFormat(newFileName) === 'markdown' && !newFileName.endsWith('.md')
+      ? `${newFileName}.md`
+      : newFileName;
+  const cleanOldName = driveFileName(oldFileName);
 
   const patchName = async (fileId: string) => {
     const res = await driveFetch(`files/${encodeURIComponent(fileId)}?fields=id,modifiedTime`, {
@@ -632,6 +657,8 @@ export async function importVaultFromDrive(
 
   async function scanDirectory(folderId: string, relativePath: string) {
     const isSkillsFolder = relativePath.toLowerCase().includes('skill');
+    // Projects may also hold JSON and plain-text files, which keep their own extension.
+    const allowsAltFormats = folderAllowsAltFormats(relativePath);
     const parentQuery = `'${escapeDriveQuery(folderId)}' in parents and trashed = false`;
 
     // 1. Scan files in this directory
@@ -648,11 +675,13 @@ export async function importVaultFromDrive(
         const hasTextExt =
           item.name.endsWith('.md') ||
           item.name.endsWith('.markdown') ||
-          item.name.endsWith('.txt');
+          item.name.endsWith('.txt') ||
+          (allowsAltFormats && item.name.endsWith('.json'));
         const isTextMime =
           item.mimeType === 'text/markdown' ||
           item.mimeType === 'text/plain' ||
-          item.mimeType === 'application/octet-stream';
+          item.mimeType === 'application/octet-stream' ||
+          (allowsAltFormats && item.mimeType === 'application/json');
         if (!hasTextExt && !isTextMime) return false;
       }
       return true;
@@ -660,7 +689,8 @@ export async function importVaultFromDrive(
 
     // Concurrently fetch file contents in batches of 10 for faster sign-in
     await mapConcurrent(eligibleItems, 10, async (item) => {
-      const cleanName = item.name.endsWith('.md') ? item.name : `${item.name}.md`;
+      const keepName = allowsAltFormats && getFileFormat(item.name) !== 'markdown';
+      const cleanName = item.name.endsWith('.md') || keepName ? item.name : `${item.name}.md`;
       const currentFolder = relativePath || (isSkillsFolder ? 'skills' : 'notes');
       const filePath = `${currentFolder}/${cleanName}`;
 
@@ -670,7 +700,7 @@ export async function importVaultFromDrive(
       try {
         const contentRes = await driveFetch(`files/${encodeURIComponent(item.id)}?alt=media`);
         const text = await contentRes.text();
-        const parsed = parseFrontmatter(text);
+        const parsed = { frontmatter: getFileFrontmatter(cleanName, text) };
 
         let title = parsed.frontmatter.title;
         if (!title || title.toUpperCase() === 'SKILL' || title.toLowerCase() === 'untitled') {

@@ -1,5 +1,7 @@
 import { VaultFile } from '../types';
-import { parseFrontmatter } from './markdownParser';
+import { getOpenTasks, parseFrontmatter } from './markdownParser';
+import { STANDARD_FOLDERS, getTopLevelFolder, isArchiveFile } from './fileKinds';
+import { isMarkdownFile } from './fileFormats';
 
 /**
  * The Trailhead: the vault's first folder ("0. Trailhead" in the sidebar). Its start.md is the
@@ -113,4 +115,36 @@ export function ensureTrailhead(files: VaultFile[]): TrailheadResult {
     };
   }
   return { files: [createTrailheadFile(), ...files], startChanged: true };
+}
+
+export interface FileOpenTasks {
+  file: VaultFile;
+  tasks: { taskIndex: number; text: string }[];
+}
+
+const FOLDER_ORDER: readonly string[] = STANDARD_FOLDERS;
+const folderRank = (file: VaultFile) => {
+  const i = FOLDER_ORDER.indexOf(getTopLevelFolder(file));
+  return i === -1 ? FOLDER_ORDER.length : i;
+};
+
+/**
+ * The unchecked tasks of every markdown file that isn't archived (not in archive/, status not
+ * "archived"), for the list on start.md. start.md's own tasks are left out (they're on the page).
+ * Ordered by vault folder (goals, projects, skills, notes, others), then by path.
+ */
+export function collectOpenTasks(files: VaultFile[]): FileOpenTasks[] {
+  return files
+    .filter(
+      (f) =>
+        !isTrailheadFile(f) &&
+        isMarkdownFile(f) &&
+        !isArchiveFile(f) &&
+        f.frontmatter.status !== 'archived',
+    )
+    .map((file) => ({ file, tasks: getOpenTasks(file.content) }))
+    .filter((entry) => entry.tasks.length > 0)
+    .sort(
+      (a, b) => folderRank(a.file) - folderRank(b.file) || a.file.path.localeCompare(b.file.path),
+    );
 }

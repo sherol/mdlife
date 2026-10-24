@@ -335,7 +335,7 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".md,.markdown,text/markdown"
+            accept=".md,.markdown,text/markdown,.json,application/json,.txt,text/plain"
             multiple
             className="hidden"
             onChange={handleFileChange}
@@ -347,7 +347,7 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
             type="button"
             id="btn-import-md"
             onClick={() => fileInputRef.current?.click()}
-            title="Import .md files"
+            title="Import .md files (.json and .txt files go into Projects)"
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 border border-stone-200 rounded-lg transition-colors cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5 text-stone-500" />

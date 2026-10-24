@@ -35,6 +35,15 @@ import {
   DriveAuthError,
 } from './utils/googleDrive';
 import { isDriveSyncDisabled } from './utils/storageKeys';
+import {
+  extensionForFormat,
+  folderAllowsAltFormats,
+  getFileFormat,
+  getFileFrontmatter,
+  getTemplateForFormat,
+  isMarkdownFile,
+  normalizeFileName,
+} from './utils/fileFormats';
 import { getInitialVaultFiles } from './data/initialVault';
 import { useRefState } from './hooks/useRefState';
 import { useDriveSync, SyncSummary } from './hooks/useDriveSync';
@@ -274,11 +283,10 @@ export default function App({ forceOffline = false }: AppProps) {
     });
   }, []);
 
-  // Handle content updates to current file
-  const handleUpdateContent = (newContent: string) => {
-    if (!currentFile) return;
-    const targetId = currentFile.id;
-    const { frontmatter } = parseFrontmatter(newContent);
+  // Write new content into a file (and queue it for Drive sync)
+  const updateFileContent = (target: VaultFile, newContent: string) => {
+    const targetId = target.id;
+    const frontmatter = getFileFrontmatter(target.name, newContent);
 
     updateFiles((prev) =>
       prev.map((f) =>
@@ -287,6 +295,17 @@ export default function App({ forceOffline = false }: AppProps) {
     );
     // Mark as having unsaved local changes pending Drive sync
     markUnsaved([targetId]);
+  };
+
+  const handleUpdateContent = (newContent: string) => {
+    if (currentFile) updateFileContent(currentFile, newContent);
+  };
+
+  // Toggle a task in any file (the open-task list on start.md)
+  const handleToggleTaskInFile = (fileId: string, taskIndex: number) => {
+    const target = filesRef.current.find((f) => f.id === fileId);
+    if (!target) return;
+    updateFileContent(target, toggleCheckboxInMarkdown(target.content, taskIndex));
   };
 
   // Toggle a checkbox in the active file
@@ -323,9 +342,13 @@ export default function App({ forceOffline = false }: AppProps) {
                 ? 'archive'
                 : 'custom';
 
-    const content = getTemplateForCategory(category, title);
-    const { frontmatter } = parseFrontmatter(content);
-    const cleanName = filename.endsWith('.md') ? filename : `${filename}.md`;
+    const cleanName = normalizeFileName(filename, folder);
+    const format = getFileFormat(cleanName);
+    const content =
+      format === 'markdown'
+        ? getTemplateForCategory(category, title)
+        : getTemplateForFormat(format, title);
+    const frontmatter = getFileFrontmatter(cleanName, content);
     const path = `${folder}/${cleanName}`;
 
     const newFile: VaultFile = {
@@ -479,11 +502,16 @@ export default function App({ forceOffline = false }: AppProps) {
     }
 
     // Sanitize filename
-    let cleanName = rawNewName.trim().replace(/[/\\]/g, '');
-    if (!cleanName) return false;
-    if (!cleanName.endsWith('.md')) {
-      cleanName = `${cleanName}.md`;
-    }
+    const sanitized = rawNewName.trim().replace(/[/\\]/g, '');
+    if (!sanitized) return false;
+    // A JSON / plain-text file renamed without an extension keeps its format.
+    const oldFormat = getFileFormat(fileToRename.name);
+    const cleanName = normalizeFileName(
+      oldFormat !== 'markdown' && !/\.(md|json|txt)$/i.test(sanitized)
+        ? `${sanitized}${extensionForFormat(oldFormat)}`
+        : sanitized,
+      fileToRename.folder,
+    );
 
     // If identical, no-op
     if (cleanName === fileToRename.name) {
@@ -586,20 +614,23 @@ export default function App({ forceOffline = false }: AppProps) {
     return true;
   };
 
-  // Import markdown files
+  // Import markdown files (and JSON / plain-text files, which go into Projects)
   const handleImportFiles = async (fileList: FileList) => {
     const imported: VaultFile[] = [];
 
     for (let i = 0; i < fileList.length; i++) {
       const item = fileList[i];
+      const isAltFormat = getFileFormat(item.name) !== 'markdown';
       if (
+        isAltFormat ||
         item.name.endsWith('.md') ||
         item.name.endsWith('.markdown') ||
         item.type.includes('markdown')
       ) {
         const text = await item.text();
-        const { frontmatter } = parseFrontmatter(text);
-        const folder = frontmatter.category || 'notes';
+        const frontmatter = getFileFrontmatter(item.name, text);
+        const category = frontmatter.category || 'notes';
+        const folder = isAltFormat && !folderAllowsAltFormats(category) ? 'projects' : category;
         const path = `${folder}/${item.name}`;
 
         imported.push({
@@ -1242,6 +1273,7 @@ export default function App({ forceOffline = false }: AppProps) {
                   onChangeContent={handleUpdateContent}
                   onNavigateToFile={handleNavigateToFile}
                   onToggleCheckbox={handleToggleCheckbox}
+                  onToggleTaskInFile={handleToggleTaskInFile}
                   onOpenSkillPlayground={(s) => setSkillForPlayground(s)}
                   onRenameFile={isTrailheadFile(currentFile) ? undefined : handleRenameFile}
                   onSaveToDrive={isMockMode ? undefined : handleRequestSaveFileToDrive}
@@ -1255,7 +1287,7 @@ export default function App({ forceOffline = false }: AppProps) {
                   googleUser={googleUser}
                   onShareProject={(folder) => setSharingProjectFolder(folder)}
                   sharedDoc={
-                    isMockMode
+                    isMockMode || !isMarkdownFile(currentFile)
                       ? undefined
                       : {
                           linked: !!getLinkedDocId(currentFile),
