@@ -232,8 +232,8 @@ export const ImportGoogleDocModal: React.FC<ImportGoogleDocModalProps> = ({
           {!googleUser && (
             <div className="p-3.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 rounded-xl flex items-center justify-between gap-3">
               <div className="text-xs text-blue-900 dark:text-blue-200">
-                <span className="font-medium">Google Account Required:</span> Sign in to access your
-                documents with Google Docs permission.
+                <span className="font-medium">Google Account Required:</span> Sign in, then pick a
+                document. mdlife can only read the docs you pick.
               </div>
               <button
                 type="button"

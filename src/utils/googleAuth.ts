@@ -16,10 +16,10 @@ const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();
-// Request Google Drive and Google Docs scopes (least-privilege for vault sync, Google Picker, and Docs import)
+// Request Drive scopes for vault sync and the Google Picker. Google Docs are read via drive.file,
+// which covers only docs picked with the Picker, so mdlife never gets access to all your Docs.
 provider.addScope('https://www.googleapis.com/auth/drive.file');
 provider.addScope('https://www.googleapis.com/auth/drive.metadata.readonly');
-provider.addScope('https://www.googleapis.com/auth/documents.readonly');
 
 // The OAuth access token lives in memory, mirrored to sessionStorage (per tab, cleared when the
 // tab closes) so a reload doesn't force a new popup. It is never written to localStorage.

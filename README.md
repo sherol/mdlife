@@ -195,7 +195,7 @@ To enable Google Sign-In on your published GitHub Pages URL (e.g. `https://<your
 - The app requests these Google scopes:
   - `drive.file`: read and write **only the files the app created or that you picked** with the Google Picker (the vault, shared Google Docs, your SheetSync sheet). It cannot read or change your other Drive files.
   - `drive.metadata.readonly`: file names and details (not contents).
-  - `documents.readonly`: read a Google Doc you import.
+  - Google Docs you import are read through `drive.file`, so only docs you pick with the Picker are accessible. The app never asks to read all your Google Docs.
 - No vault contents are stored on any external server. All API calls go directly from your browser to Google APIs; the vault is also cached in your browser's `localStorage`.
 
 ---
