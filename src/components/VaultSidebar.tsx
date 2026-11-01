@@ -25,6 +25,7 @@ import {
   Share2,
 } from 'lucide-react';
 import { VaultFile, FileCategory, TaskProgress } from '../types';
+import { folderLinkList } from '../utils/markdownParser';
 import { exportSingleFile } from '../utils/storage';
 import { STANDARD_FOLDERS, getTopLevelFolder } from '../utils/fileKinds';
 import { getFileFormat, getFileTaskProgress, stripFileExtension } from '../utils/fileFormats';
@@ -133,14 +134,8 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
 
   // Copies a project folder's notes as a Markdown list of [[wiki-links]], one per .md file
   const handleCopyFolderLinks = async (subKey: string) => {
-    const prefix = `${subKey.toLowerCase()}/`;
-    const lines = files
-      .filter((f) => f.name.toLowerCase().endsWith('.md') && `${f.folder.toLowerCase()}/`.startsWith(prefix))
-      .map((f) => f.name.replace(/\.md$/i, ''))
-      .sort((a, b) => a.localeCompare(b))
-      .map((name) => `* [[${name}]]`);
     try {
-      await navigator.clipboard.writeText(lines.join('\n'));
+      await navigator.clipboard.writeText(folderLinkList(files, subKey));
       setCopiedLinksKey(subKey);
       setTimeout(() => setCopiedLinksKey((k) => (k === subKey ? null : k)), 1500);
     } catch (err) {

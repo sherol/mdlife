@@ -9,6 +9,7 @@ import {
   toggleCheckboxInMarkdown,
   updateWikiLinks,
   resolveWikiTarget,
+  folderLinkList,
 } from '../markdownParser';
 
 describe('parseFrontmatter', () => {
@@ -267,5 +268,28 @@ describe('same-named files in different projects', () => {
       'See [[alpha-kickoff]], [[alpha-kickoff.md|notes]] and [[projects/beta/kickoff]].',
     );
     expect(updateWikiLinks(md, 'kickoff.md', 'alpha-kickoff.md', pointsTo({ folder: 'projects/beta' }))).toBe(md);
+  });
+});
+
+describe('folderLinkList', () => {
+  const f = (folder: string, name: string) => ({ folder, name });
+  const files = [
+    f('projects/alph', 'alph-kickoff.md'),
+    f('projects/alph', 'alph-alpha.md'),
+    f('projects/alph', 'data.json'),
+    f('projects/alph/meetings', 'standup.md'),
+    f('projects/alpha', 'other-project.md'),
+    f('notes', 'unrelated.md'),
+  ];
+
+  it("lists the folder's notes, sub-folders included, sorted, as [[links]]", () => {
+    expect(folderLinkList(files, 'projects/alph')).toBe('* [[alph-alpha]]\n* [[alph-kickoff]]\n* [[standup]]');
+  });
+
+  it('skips non-Markdown files and folders that only share a prefix', () => {
+    const out = folderLinkList(files, 'projects/alph');
+    expect(out).not.toContain('data');
+    expect(out).not.toContain('other-project');
+    expect(folderLinkList(files, 'projects/empty')).toBe('');
   });
 });

@@ -340,6 +340,20 @@ export function wikiTargetMatchesFile(
   );
 }
 
+/**
+ * A folder's notes as a Markdown list of [[wiki-links]], one "* [[name]]" line per .md file in
+ * it or its sub-folders, sorted by name.
+ */
+export function folderLinkList(files: { name: string; folder: string }[], folder: string): string {
+  const prefix = `${folder.toLowerCase()}/`;
+  return files
+    .filter((f) => f.name.toLowerCase().endsWith('.md') && `${f.folder.toLowerCase()}/`.startsWith(prefix))
+    .map((f) => f.name.replace(/\.md$/i, ''))
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => `* [[${name}]]`)
+    .join('\n');
+}
+
 /** Number of leading folder segments two folders share ("projects/alpha" vs "projects/beta" -> 1). */
 function sharedFolderDepth(a: string, b: string): number {
   const x = a.toLowerCase().split('/').filter(Boolean);
