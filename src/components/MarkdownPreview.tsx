@@ -29,7 +29,7 @@ import {
   extractWikiLinks,
   getTaskLineIndexMap,
   splitFrontmatterBlock,
-  wikiTargetMatchesFile,
+  resolveWikiTarget,
 } from '../utils/markdownParser';
 import { getTopLevelFolder, isSkillFile } from '../utils/fileKinds';
 import { collectOpenTasks, isTrailheadFile } from '../utils/trailhead';
@@ -103,6 +103,8 @@ const slugify = (text: string) =>
 
 interface PreviewContextValue {
   allFiles: VaultFile[];
+  /** Folder of the note being previewed; [[links]] prefer files closest to it. */
+  fromFolder: string;
   taskLineMap: Map<number, number>;
   onNavigateToFile: (filenameOrPath: string) => void;
   onToggleCheckbox: (index: number) => void;
@@ -140,13 +142,13 @@ const PreviewLink: React.FC<{ href?: string; children?: React.ReactNode }> = ({
   href,
   children,
 }) => {
-  const { allFiles, onNavigateToFile } = usePreviewContext();
+  const { allFiles, fromFolder, onNavigateToFile } = usePreviewContext();
   if (!href) return <span>{children}</span>;
 
   // 1. Internal Wiki-Link generated from [[WikiLinks]]
   if (href.startsWith('wiki:')) {
     const target = decodeURIComponent(href.slice(5));
-    const matchedFile = allFiles.find((f) => wikiTargetMatchesFile(target, f));
+    const matchedFile = resolveWikiTarget(target, allFiles, { folder: fromFolder });
 
     return (
       <button
@@ -418,11 +420,12 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
   const contextValue = useMemo<PreviewContextValue>(
     () => ({
       allFiles: deferredAllFiles,
+      fromFolder: file.folder,
       taskLineMap,
       onNavigateToFile: stableNavigate,
       onToggleCheckbox: stableToggle,
     }),
-    [deferredAllFiles, taskLineMap, stableNavigate, stableToggle],
+    [deferredAllFiles, file.folder, taskLineMap, stableNavigate, stableToggle],
   );
 
   const copyContent = async () => {
@@ -452,17 +455,15 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
   );
 
   // Files whose [[WikiLinks]] point at this file
-  const fileTitle = frontmatter.title;
   const backlinks = useMemo(() => {
-    const target = { name: file.name, path: file.path, frontmatter: { title: fileTitle } };
     return deferredAllFiles
       .filter(
         (f) =>
           f.id !== file.id &&
-          extractWikiLinks(f.content).some((link) => wikiTargetMatchesFile(link, target)),
+          extractWikiLinks(f.content).some((link) => resolveWikiTarget(link, deferredAllFiles, f)?.id === file.id),
       )
       .sort((a, b) => (a.frontmatter.title || a.name).localeCompare(b.frontmatter.title || b.name));
-  }, [deferredAllFiles, file.id, file.name, file.path, fileTitle]);
+  }, [deferredAllFiles, file.id]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-white p-6 md:p-8 max-w-4xl mx-auto w-full">

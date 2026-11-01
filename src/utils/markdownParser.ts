@@ -340,6 +340,39 @@ export function wikiTargetMatchesFile(
   );
 }
 
+/** Number of leading folder segments two folders share ("projects/alpha" vs "projects/beta" -> 1). */
+function sharedFolderDepth(a: string, b: string): number {
+  const x = a.toLowerCase().split('/').filter(Boolean);
+  const y = b.toLowerCase().split('/').filter(Boolean);
+  let n = 0;
+  while (n < x.length && n < y.length && x[n] === y[n]) n++;
+  return n;
+}
+
+/**
+ * The file a [[wiki-link]] opens. When several files match (e.g. two projects each have a
+ * kickoff.md), the one closest to the linking note wins: same folder first, then the nearest
+ * shared parent folder; ties keep vault order. Without `from`, the first match wins.
+ */
+export function resolveWikiTarget<T extends { name: string; path: string; folder: string; frontmatter: { title?: string } }>(
+  target: string,
+  files: T[],
+  from?: { folder: string },
+): T | undefined {
+  let best: T | undefined;
+  let bestDepth = -1;
+  for (const f of files) {
+    if (!wikiTargetMatchesFile(target, f)) continue;
+    if (!from) return f;
+    const depth = sharedFolderDepth(f.folder, from.folder);
+    if (depth > bestDepth) {
+      best = f;
+      bestDepth = depth;
+    }
+  }
+  return best;
+}
+
 /**
  * Updates wiki-links in markdown content when a file is renamed.
  * Supports [[fileName]], [[fileName.md]], [[fileName|Alias]], [[folder/fileName]] etc.
@@ -348,6 +381,8 @@ export function updateWikiLinks(
   markdown: string,
   oldFileName: string,
   newFileName: string,
+  /** When given, only links for which this returns true are rewritten (links that open the renamed file). */
+  pointsToRenamed?: (target: string) => boolean,
 ): string {
   const oldBase = oldFileName.replace(/\.md$/, '');
   const newBase = newFileName.replace(/\.md$/, '');
@@ -358,6 +393,7 @@ export function updateWikiLinks(
     const parts = inner.split('|');
     const target = parts[0].trim();
     const alias = parts.length > 1 ? `|${parts.slice(1).join('|')}` : '';
+    if (pointsToRenamed && !pointsToRenamed(target)) return fullMatch;
 
     if (target === oldBase) {
       return `[[${newBase}${alias}]]`;
