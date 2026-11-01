@@ -347,7 +347,10 @@ export function wikiTargetMatchesFile(
 export function folderLinkList(files: { name: string; folder: string }[], folder: string): string {
   const prefix = `${folder.toLowerCase()}/`;
   return files
-    .filter((f) => f.name.toLowerCase().endsWith('.md') && `${f.folder.toLowerCase()}/`.startsWith(prefix))
+    .filter(
+      (f) =>
+        f.name.toLowerCase().endsWith('.md') && `${f.folder.toLowerCase()}/`.startsWith(prefix),
+    )
     .map((f) => f.name.replace(/\.md$/i, ''))
     .sort((a, b) => a.localeCompare(b))
     .map((name) => `* [[${name}]]`)
@@ -368,11 +371,9 @@ function sharedFolderDepth(a: string, b: string): number {
  * kickoff.md), the one closest to the linking note wins: same folder first, then the nearest
  * shared parent folder; ties keep vault order. Without `from`, the first match wins.
  */
-export function resolveWikiTarget<T extends { name: string; path: string; folder: string; frontmatter: { title?: string } }>(
-  target: string,
-  files: T[],
-  from?: { folder: string },
-): T | undefined {
+export function resolveWikiTarget<
+  T extends { name: string; path: string; folder: string; frontmatter: { title?: string } },
+>(target: string, files: T[], from?: { folder: string }): T | undefined {
   let best: T | undefined;
   let bestDepth = -1;
   for (const f of files) {

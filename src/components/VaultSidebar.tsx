@@ -546,7 +546,11 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
           aria-label={`Copy links to the notes in ${formatSlugLabel(slug)}`}
           className="p-1 hover:bg-stone-200 text-stone-400 hover:text-stone-800 rounded cursor-pointer transition-colors"
         >
-          {copiedLinksKey === subKey ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+          {copiedLinksKey === subKey ? (
+            <Check className="w-3 h-3 text-emerald-600" />
+          ) : (
+            <Copy className="w-3 h-3" />
+          )}
         </button>
         {onShareProject && (
           <button
