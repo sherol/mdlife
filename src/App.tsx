@@ -17,7 +17,7 @@ import {
   parseFrontmatter,
   toggleCheckboxInMarkdown,
   updateWikiLinks,
-  wikiTargetMatchesFile,
+  resolveWikiTarget,
 } from './utils/markdownParser';
 import {
   initAuth,
@@ -317,9 +317,10 @@ export default function App({ forceOffline = false }: AppProps) {
 
   // Navigate to another file (e.g. from wiki-link or relation card)
   const handleNavigateToFile = (query: string) => {
-    // Same matching rule the preview uses to mark a [[wiki-link]] as resolved (name, path, with or without .md, or title)
+    // Same rule the preview uses: name, path (with or without .md) or title; when several files
+    // match, the one closest to the open note's folder wins
     const cleanQuery = query.replace(/^\[\[|\]\]$/g, '');
-    const found = files.find((f) => wikiTargetMatchesFile(cleanQuery, f));
+    const found = resolveWikiTarget(cleanQuery, files, currentFile ?? undefined);
 
     if (found) {
       setSelectedFileId(found.id);
@@ -587,12 +588,20 @@ export default function App({ forceOffline = false }: AppProps) {
 
     // Rename the file and rewrite any [[wiki-links]] referencing it in all other files
     // (computed outside any state updater; side effects follow).
+    // Only links that opened this file (resolved from each note, before the rename) are rewritten,
+    // so a same-named file in another project keeps its links.
     const linkUpdatedIds: string[] = [];
-    const nextFiles = filesRef.current.map((f) => {
+    const filesBefore = filesRef.current;
+    const nextFiles = filesBefore.map((f) => {
       if (f.id === id) return renamedFile;
       // [[links]] only mean something in markdown; JSON / text content is left untouched
       if (!isMarkdownFile(f)) return f;
-      const updatedContent = updateWikiLinks(f.content, oldName, cleanName);
+      const updatedContent = updateWikiLinks(
+        f.content,
+        oldName,
+        cleanName,
+        (target) => resolveWikiTarget(target, filesBefore, f)?.id === id,
+      );
       if (updatedContent === f.content) return f;
       linkUpdatedIds.push(f.id);
       return { ...f, content: updatedContent, updatedAt: Date.now() };

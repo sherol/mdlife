@@ -8,6 +8,8 @@ import {
   stringifyWithFrontmatter,
   toggleCheckboxInMarkdown,
   updateWikiLinks,
+  resolveWikiTarget,
+  folderLinkList,
 } from '../markdownParser';
 
 describe('parseFrontmatter', () => {
@@ -229,5 +231,73 @@ describe('quoted frontmatter titles', () => {
       c: 'C:\\temp',
       d: 'plain "text" here',
     });
+  });
+});
+
+describe('same-named files in different projects', () => {
+  const file = (path: string, title?: string) => {
+    const folder = path.split('/').slice(0, -1).join('/');
+    return { id: path, path, folder, name: path.split('/').pop()!, frontmatter: { title } };
+  };
+  const alphaKickoff = file('projects/alpha/kickoff.md');
+  const betaKickoff = file('projects/beta/kickoff.md');
+  const files = [alphaKickoff, betaKickoff, file('goals/q4.md')];
+
+  it("opens the copy in the linking note's own project", () => {
+    expect(resolveWikiTarget('kickoff', files, { folder: 'projects/alpha' })).toBe(alphaKickoff);
+    expect(resolveWikiTarget('kickoff', files, { folder: 'projects/beta' })).toBe(betaKickoff);
+    expect(resolveWikiTarget('kickoff.md', files, { folder: 'projects/beta/meetings' })).toBe(
+      betaKickoff,
+    );
+  });
+
+  it('falls back to vault order when no copy is closer', () => {
+    expect(resolveWikiTarget('kickoff', files, { folder: 'notes' })).toBe(alphaKickoff);
+    expect(resolveWikiTarget('kickoff', files)).toBe(alphaKickoff);
+  });
+
+  it('full paths and unique names still resolve exactly', () => {
+    expect(resolveWikiTarget('projects/beta/kickoff', files, { folder: 'projects/alpha' })).toBe(
+      betaKickoff,
+    );
+    expect(resolveWikiTarget('q4', files, { folder: 'projects/alpha' })?.path).toBe('goals/q4.md');
+    expect(resolveWikiTarget('missing', files, { folder: 'notes' })).toBeUndefined();
+  });
+
+  it("renaming one project's file leaves the other project's links alone", () => {
+    const pointsTo = (from: { folder: string }) => (t: string) =>
+      resolveWikiTarget(t, files, from)?.id === alphaKickoff.id;
+    const md = 'See [[kickoff]], [[kickoff.md|notes]] and [[projects/beta/kickoff]].';
+    expect(
+      updateWikiLinks(md, 'kickoff.md', 'alpha-kickoff.md', pointsTo({ folder: 'projects/alpha' })),
+    ).toBe('See [[alpha-kickoff]], [[alpha-kickoff.md|notes]] and [[projects/beta/kickoff]].');
+    expect(
+      updateWikiLinks(md, 'kickoff.md', 'alpha-kickoff.md', pointsTo({ folder: 'projects/beta' })),
+    ).toBe(md);
+  });
+});
+
+describe('folderLinkList', () => {
+  const f = (folder: string, name: string) => ({ folder, name });
+  const files = [
+    f('projects/alph', 'alph-kickoff.md'),
+    f('projects/alph', 'alph-alpha.md'),
+    f('projects/alph', 'data.json'),
+    f('projects/alph/meetings', 'standup.md'),
+    f('projects/alpha', 'other-project.md'),
+    f('notes', 'unrelated.md'),
+  ];
+
+  it("lists the folder's notes, sub-folders included, sorted, as [[links]]", () => {
+    expect(folderLinkList(files, 'projects/alph')).toBe(
+      '* [[alph-alpha]]\n* [[alph-kickoff]]\n* [[standup]]',
+    );
+  });
+
+  it('skips non-Markdown files and folders that only share a prefix', () => {
+    const out = folderLinkList(files, 'projects/alph');
+    expect(out).not.toContain('data');
+    expect(out).not.toContain('other-project');
+    expect(folderLinkList(files, 'projects/empty')).toBe('');
   });
 });
