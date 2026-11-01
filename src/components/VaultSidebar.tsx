@@ -128,6 +128,25 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
   const [editingFileId, setEditingFileId] = useState<string | null>(null);
   const [editingFileName, setEditingFileName] = useState('');
+  // Project folder whose link list was just copied (shows a check for a moment)
+  const [copiedLinksKey, setCopiedLinksKey] = useState<string | null>(null);
+
+  // Copies a project folder's notes as a Markdown list of [[wiki-links]], one per .md file
+  const handleCopyFolderLinks = async (subKey: string) => {
+    const prefix = `${subKey.toLowerCase()}/`;
+    const lines = files
+      .filter((f) => f.name.toLowerCase().endsWith('.md') && `${f.folder.toLowerCase()}/`.startsWith(prefix))
+      .map((f) => f.name.replace(/\.md$/i, ''))
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => `* [[${name}]]`);
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      setCopiedLinksKey(subKey);
+      setTimeout(() => setCopiedLinksKey((k) => (k === subKey ? null : k)), 1500);
+    } catch (err) {
+      console.error('Could not copy links:', err);
+    }
+  };
 
   // Inline prompt states for adding new year / project subfolders directly
   const [isAddingYear, setIsAddingYear] = useState(false);
@@ -522,6 +541,18 @@ export const VaultSidebar: React.FC<VaultSidebarProps> = ({
     ),
     renderActions: (subKey, slug) => (
       <div className="flex items-center gap-0.5 opacity-0 group-hover/proj:opacity-100 group-focus-within/proj:opacity-100 transition-opacity shrink-0">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleCopyFolderLinks(subKey);
+          }}
+          title={`Copy [[links]] to every note in "${formatSlugLabel(slug)}"`}
+          aria-label={`Copy links to the notes in ${formatSlugLabel(slug)}`}
+          className="p-1 hover:bg-stone-200 text-stone-400 hover:text-stone-800 rounded cursor-pointer transition-colors"
+        >
+          {copiedLinksKey === subKey ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+        </button>
         {onShareProject && (
           <button
             type="button"
