@@ -16,6 +16,7 @@ import {
   HardDrive,
   CloudUpload,
   AlertCircle,
+  Github,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { VaultFile, ActiveTab, DriveConnectionStatus } from '../types';
@@ -24,6 +25,17 @@ import { getFileTaskProgress, isMarkdownFile } from '../utils/fileFormats';
 import { SQUIRREL_FAVICON_DATA_URI } from '../utils/favicon';
 import { isArchiveFile, isGoalFile, isProjectFile, isSkillFile } from '../utils/fileKinds';
 import { ThemeToggle } from './ThemeToggle';
+import type { GitHubMirrorStatus } from '../hooks/useGitHubMirror';
+
+const GITHUB_STATUS_LABELS: Record<GitHubMirrorStatus, string> = {
+  off: 'GitHub mirror: set up',
+  waiting: 'GitHub mirror: changes waiting to be pushed',
+  syncing: 'GitHub mirror: pushing',
+  ok: 'GitHub mirror: up to date',
+  error: 'GitHub mirror: last push failed',
+  auth: 'GitHub mirror: token rejected',
+  confirm: 'GitHub mirror: push needs confirmation',
+};
 
 interface VaultHeaderProps {
   files: VaultFile[];
@@ -47,6 +59,9 @@ interface VaultHeaderProps {
   onBackup?: () => void;
   /** e.g. "12/40" while a backup runs; null when idle. */
   backupProgress?: string | null;
+  /** Opens the GitHub mirror settings. */
+  onOpenGitHubMirror?: () => void;
+  githubMirrorStatus?: GitHubMirrorStatus;
 }
 
 export const VaultHeader: React.FC<VaultHeaderProps> = ({
@@ -69,6 +84,8 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
   isMockMode = false,
   onBackup,
   backupProgress = null,
+  onOpenGitHubMirror,
+  githubMirrorStatus = 'off',
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -399,6 +416,35 @@ export const VaultHeader: React.FC<VaultHeaderProps> = ({
               />
               {backupProgress !== null && (
                 <span className="font-mono text-[10px]">{backupProgress}</span>
+              )}
+            </button>
+          )}
+
+          {onOpenGitHubMirror && (
+            <button
+              type="button"
+              id="btn-github-mirror"
+              onClick={onOpenGitHubMirror}
+              title={GITHUB_STATUS_LABELS[githubMirrorStatus]}
+              aria-label={GITHUB_STATUS_LABELS[githubMirrorStatus]}
+              className="relative inline-flex items-center p-2 text-stone-600 bg-white hover:bg-stone-100 hover:text-stone-900 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+            >
+              <Github
+                className={`w-4 h-4 ${githubMirrorStatus === 'syncing' ? 'animate-pulse' : ''}`}
+              />
+              {githubMirrorStatus !== 'off' && (
+                <span
+                  aria-hidden="true"
+                  className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-full ${
+                    githubMirrorStatus === 'ok'
+                      ? 'bg-emerald-500'
+                      : githubMirrorStatus === 'error' ||
+                          githubMirrorStatus === 'auth' ||
+                          githubMirrorStatus === 'confirm'
+                        ? 'bg-red-500'
+                        : 'bg-amber-400'
+                  }`}
+                />
               )}
             </button>
           )}

@@ -47,6 +47,8 @@ import {
 import { getInitialVaultFiles } from './data/initialVault';
 import { useRefState } from './hooks/useRefState';
 import { useDriveSync, SyncSummary } from './hooks/useDriveSync';
+import { useGitHubMirror } from './hooks/useGitHubMirror';
+import { GitHubMirrorModal } from './components/GitHubMirrorModal';
 import { VaultHeader } from './components/VaultHeader';
 import { VaultSidebar } from './components/VaultSidebar';
 import { MarkdownEditor } from './components/MarkdownEditor';
@@ -98,6 +100,7 @@ export default function App({ forceOffline = false }: AppProps) {
   const [sharingProjectFolder, setSharingProjectFolder] = useState<string | null>(null);
   const [sharedDocFileId, setSharedDocFileId] = useState<string | null>(null);
   const [backupProgress, setBackupProgress] = useState<string | null>(null);
+  const [isGitHubMirrorOpen, setIsGitHubMirrorOpen] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<VaultFile | null>(null);
   const [isDeletingFile, setIsDeletingFile] = useState(false);
 
@@ -126,6 +129,7 @@ export default function App({ forceOffline = false }: AppProps) {
     isRefreshingDrive,
     setIsRefreshingDrive,
     isLoadingDriveFiles,
+    hasLoadedFromDrive,
     markUnsaved,
     flushSaves,
     deleteFromDrive,
@@ -153,6 +157,17 @@ export default function App({ forceOffline = false }: AppProps) {
     setSelectedFileId,
     notify: setToastNotification,
     activeFileId: selectedFileId,
+  });
+
+  // Copy of the vault in a GitHub repo (Drive stays the source of truth).
+  const githubMirror = useGitHubMirror({
+    enabled: !isMockMode,
+    driveMode: isDriveEnabled,
+    hasLoadedFromDrive,
+    unsavedCount: unsavedFileIds.size,
+    isDriveSyncing,
+    files,
+    notify: setToastNotification,
   });
 
   // CRITICAL PERSISTENCE: Save unsavedFileIds to localStorage so dirty edits survive refresh
@@ -1138,6 +1153,8 @@ export default function App({ forceOffline = false }: AppProps) {
         isMockMode={isMockMode}
         onBackup={isMockMode ? undefined : handleBackupVault}
         backupProgress={backupProgress}
+        onOpenGitHubMirror={isMockMode ? undefined : () => setIsGitHubMirrorOpen(true)}
+        githubMirrorStatus={githubMirror.state.status}
       />
 
       {/* Floating Notification Toast */}
@@ -1399,6 +1416,18 @@ export default function App({ forceOffline = false }: AppProps) {
         onDiscardAndReload={handleDiscardAndReloadFromDrive}
         isProcessing={isRefreshingDrive}
       />
+
+      {/* GitHub mirror settings */}
+      {isGitHubMirrorOpen && (
+        <GitHubMirrorModal
+          onClose={() => setIsGitHubMirrorOpen(false)}
+          config={githubMirror.config}
+          state={githubMirror.state}
+          waitingFor={githubMirror.waitingFor}
+          onSave={githubMirror.updateConfig}
+          onPushNow={githubMirror.pushNow}
+        />
+      )}
 
       {/* Share Project Modal */}
       {sharingProjectFolder && (
