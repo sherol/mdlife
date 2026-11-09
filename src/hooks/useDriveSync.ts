@@ -194,6 +194,8 @@ export function useDriveSync({
   const [docConflict, setDocConflict] = useState<DocConflict | null>(null);
   const [docConflictIds, setDocConflictIds] = useState<Set<string>>(() => new Set());
   const [sharedDocStatus, setSharedDocStatus] = useState<Record<string, SharedDocStatus>>({});
+  /** The full vault has been loaded from Drive at least once this session. */
+  const [hasLoadedFromDrive, setHasLoadedFromDrive] = useState(false);
 
   const enabledRef = useRef(enabled);
   /* eslint-disable react-hooks/refs -- "latest value in a ref" pattern (intentional, see eslint.config.js) */
@@ -578,6 +580,7 @@ export function useDriveSync({
     resultsRef.current.clear();
     pendingDeletionsRef.current = [];
     setPendingDeletionCount(0);
+    setHasLoadedFromDrive(false);
   }, []);
 
   /** Runs a Google Doc sync for one shared note through the serialized queue. */
@@ -655,6 +658,7 @@ export function useDriveSync({
             });
           }
         }
+        setHasLoadedFromDrive(true);
         return true;
       } catch (err) {
         console.error('Failed to load files from Google Drive:', err);
@@ -923,6 +927,7 @@ export function useDriveSync({
     isRefreshingDrive,
     setIsRefreshingDrive,
     isLoadingDriveFiles,
+    hasLoadedFromDrive,
     pendingDeletionCount,
     markUnsaved,
     flushSaves,
