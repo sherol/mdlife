@@ -13,6 +13,8 @@ const PENDING_DELETIONS_KEY = 'md_life_vault_pending_deletions';
 const BYPASSED_AUTH_KEY = 'md_vault_bypassed_auth';
 
 const VAULT_SAVE_DEBOUNCE_MS = 500;
+/** File in every ZIP export recording when it was made. */
+export const EXPORT_INFO_FILE = '.mdlife-export.json';
 
 export function loadUnsavedFileIds(): Set<string> {
   try {
@@ -184,6 +186,7 @@ export function exportSingleFile(file: VaultFile): void {
  */
 export async function exportVaultAsZip(files: VaultFile[]): Promise<void> {
   const zip = new JSZip();
+  const exportedAt = new Date();
 
   // Group files into their respective folders in the zip
   for (const file of files) {
@@ -206,12 +209,17 @@ This vault was exported from your Markdown Life & Skills system.
 Each file contains structured YAML frontmatter compatible with Obsidian, VS Code, Logseq, and automated AI agent workflows.
 `;
   zip.file('README.md', readmeContent);
+  // When this export was made, so a tool unpacking it can refuse an export older than its copy.
+  zip.file(
+    EXPORT_INFO_FILE,
+    JSON.stringify({ app: 'mdlife', exportedAt: exportedAt.toISOString() }, null, 2) + '\n',
+  );
 
   const contentBlob = await zip.generateAsync({ type: 'blob' });
   const url = URL.createObjectURL(contentBlob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `life-and-skills-vault-${new Date().toISOString().split('T')[0]}.zip`;
+  a.download = `life-and-skills-vault-${exportedAt.toISOString().split('T')[0]}.zip`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
